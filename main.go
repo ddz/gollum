@@ -14,6 +14,16 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
+// systemPrompt defines the system prompt for the assistant.
+// Modify this string to customize the agent's behavior and personality.
+// Leave empty ("") to use Claude's default behavior.
+//
+// Examples:
+// const systemPrompt = "You are a helpful coding assistant. Be concise and practical."
+// const systemPrompt = "You are an expert Linux system administrator."
+// const systemPrompt = "You are a helpful AI assistant that specializes in data analysis. Always explain your reasoning step by step."
+const systemPrompt = ""
+
 // toolUseInfo holds information about a tool use block
 type toolUseInfo struct {
 	ID    string
@@ -75,6 +85,9 @@ func main() {
 
 	fmt.Println("Anthropic Agent with Local Bash Execution")
 	fmt.Println("Commands are executed locally on your machine")
+	if systemPrompt != "" {
+		fmt.Printf("System prompt: %s\n", systemPrompt)
+	}
 	fmt.Println("Type 'exit' to quit")
 	fmt.Println("---------------------------------------------------")
 
@@ -99,16 +112,29 @@ func main() {
 		for {
 			// Create streaming request with beta for bash tool
 			ctx := context.Background()
-			stream := client.Beta.Messages.NewStreaming(ctx,
-				anthropic.BetaMessageNewParams{
-					Model:     anthropic.ModelClaude3_5Sonnet20241022,
-					MaxTokens: 1024,
-					Messages:  messages,
-					Tools:     []anthropic.BetaToolUnionParam{bashTool},
-					Betas: []anthropic.AnthropicBeta{
-						anthropic.AnthropicBetaComputerUse2025_01_24,
+
+			// Build the message parameters
+			params := anthropic.BetaMessageNewParams{
+				Model:     anthropic.ModelClaude3_5Sonnet20241022,
+				MaxTokens: 1024,
+				Messages:  messages,
+				Tools:     []anthropic.BetaToolUnionParam{bashTool},
+				Betas: []anthropic.AnthropicBeta{
+					anthropic.AnthropicBetaComputerUse2025_01_24,
+				},
+			}
+
+			// Add system prompt if provided
+			if systemPrompt != "" {
+				params.System = []anthropic.BetaTextBlockParam{
+					{
+						Text: systemPrompt,
+						Type: "text",
 					},
-				})
+				}
+			}
+
+			stream := client.Beta.Messages.NewStreaming(ctx, params)
 
 			fmt.Print("\nAssistant: ")
 
