@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,88 @@ import (
 // const systemPrompt = "You are an expert Linux system administrator."
 // const systemPrompt = "You are a helpful AI assistant that specializes in data analysis. Always explain your reasoning step by step."
 const systemPrompt = ""
+
+// getModelFromString converts a model string to the appropriate anthropic.Model constant
+func getModelFromString(modelStr string) anthropic.Model {
+	switch modelStr {
+	// Claude 4 models
+	case "claude-sonnet-4-0", "claude-4-sonnet":
+		return anthropic.ModelClaudeSonnet4_0
+	case "claude-sonnet-4-20250514", "claude-4-sonnet-20250514":
+		return anthropic.ModelClaude4Sonnet20250514
+	case "claude-opus-4-0", "claude-4-opus":
+		return anthropic.ModelClaudeOpus4_0
+	case "claude-opus-4-20250514", "claude-4-opus-20250514":
+		return anthropic.ModelClaude4Opus20250514
+
+	// Claude 3.7 models
+	case "claude-3-7-sonnet-latest", "claude-3.7-sonnet-latest":
+		return anthropic.ModelClaude3_7SonnetLatest
+	case "claude-3-7-sonnet-20250219", "claude-3.7-sonnet-20250219":
+		return anthropic.ModelClaude3_7Sonnet20250219
+
+	// Claude 3.5 models
+	case "claude-3-5-sonnet-latest", "claude-3.5-sonnet-latest":
+		return anthropic.ModelClaude3_5SonnetLatest
+	case "claude-3-5-sonnet-20241022", "claude-3.5-sonnet-20241022":
+		return anthropic.ModelClaude3_5Sonnet20241022
+	case "claude-3-5-sonnet-20240620", "claude-3.5-sonnet-20240620":
+		return anthropic.ModelClaude_3_5_Sonnet_20240620
+	case "claude-3-5-haiku-latest", "claude-3.5-haiku-latest":
+		return anthropic.ModelClaude3_5HaikuLatest
+	case "claude-3-5-haiku-20241022", "claude-3.5-haiku-20241022":
+		return anthropic.ModelClaude3_5Haiku20241022
+
+	// Claude 3 models
+	case "claude-3-opus-latest", "claude-3-opus":
+		return anthropic.ModelClaude3OpusLatest
+	case "claude-3-opus-20240229":
+		return anthropic.ModelClaude_3_Opus_20240229
+	case "claude-3-sonnet-20240229":
+		return anthropic.ModelClaude_3_Sonnet_20240229
+	case "claude-3-haiku-20240307":
+		return anthropic.ModelClaude_3_Haiku_20240307
+
+	// Claude 2 models
+	case "claude-2.1":
+		return anthropic.ModelClaude_2_1
+	case "claude-2.0":
+		return anthropic.ModelClaude_2_0
+
+	default:
+		// Return the raw string as a Model - this allows for future models
+		// that may not be in our mapping yet
+		return anthropic.Model(modelStr)
+	}
+}
+
+// printAvailableModels prints the list of supported model names
+func printAvailableModels() {
+	fmt.Println("\nSupported model names:")
+	fmt.Println("Claude 4 models:")
+	fmt.Println("  claude-sonnet-4-0, claude-4-sonnet (default)")
+	fmt.Println("  claude-sonnet-4-20250514, claude-4-sonnet-20250514")
+	fmt.Println("  claude-opus-4-0, claude-4-opus")
+	fmt.Println("  claude-opus-4-20250514, claude-4-opus-20250514")
+	fmt.Println("\nClaude 3.7 models:")
+	fmt.Println("  claude-3-7-sonnet-latest, claude-3.7-sonnet-latest")
+	fmt.Println("  claude-3-7-sonnet-20250219, claude-3.7-sonnet-20250219")
+	fmt.Println("\nClaude 3.5 models:")
+	fmt.Println("  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest")
+	fmt.Println("  claude-3-5-sonnet-20241022, claude-3.5-sonnet-20241022")
+	fmt.Println("  claude-3-5-sonnet-20240620, claude-3.5-sonnet-20240620")
+	fmt.Println("  claude-3-5-haiku-latest, claude-3.5-haiku-latest")
+	fmt.Println("  claude-3-5-haiku-20241022, claude-3.5-haiku-20241022")
+	fmt.Println("\nClaude 3 models:")
+	fmt.Println("  claude-3-opus-latest, claude-3-opus")
+	fmt.Println("  claude-3-opus-20240229")
+	fmt.Println("  claude-3-sonnet-20240229")
+	fmt.Println("  claude-3-haiku-20240307")
+	fmt.Println("\nClaude 2 models:")
+	fmt.Println("  claude-2.1")
+	fmt.Println("  claude-2.0")
+	fmt.Println("\nYou can also specify any model name directly (for future models).")
+}
 
 // toolUseInfo holds information about a tool use block
 type toolUseInfo struct {
@@ -60,12 +143,51 @@ func executeBashCommand(command string) (string, error) {
 }
 
 func main() {
+	// Define command-line flags
+	var (
+		modelName  = flag.String("model", "claude-sonnet-4-0", "Model to use (e.g., claude-sonnet-4-0, claude-3-5-sonnet-latest)")
+		listModels = flag.Bool("list-models", false, "List available model names and exit")
+		help       = flag.Bool("help", false, "Show help message")
+	)
+
+	// Custom usage function
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Anthropic Claude Agent with Local Bash Execution\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
+		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY    Anthropic API key (required)\n")
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  %s                                   # Use default Claude 4 Sonnet model\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -model claude-3-5-sonnet-latest   # Use Claude 3.5 Sonnet\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -model claude-4-opus              # Use Claude 4 Opus\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -list-models                      # Show available models\n", os.Args[0])
+	}
+
+	flag.Parse()
+
+	// Handle help flag
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
+
+	// Handle list-models flag
+	if *listModels {
+		printAvailableModels()
+		os.Exit(0)
+	}
+
 	// Get API key from environment
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
 		fmt.Println("Please set ANTHROPIC_API_KEY environment variable")
 		os.Exit(1)
 	}
+
+	// Convert model name to appropriate constant
+	selectedModel := getModelFromString(*modelName)
 
 	// Create client
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
@@ -83,7 +205,8 @@ func main() {
 	// Create a scanner for user input
 	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Println("Anthropic Agent with Local Bash Execution")
+	fmt.Println("Anthropic Claude Agent with Local Bash Execution")
+	fmt.Printf("Using model: %s\n", *modelName)
 	fmt.Println("Commands are executed locally on your machine")
 	if systemPrompt != "" {
 		fmt.Printf("System prompt: %s\n", systemPrompt)
@@ -114,8 +237,9 @@ func main() {
 			ctx := context.Background()
 
 			// Build the message parameters
+			// Using the selected model from command line
 			params := anthropic.BetaMessageNewParams{
-				Model:     anthropic.ModelClaude3_5Sonnet20241022,
+				Model:     selectedModel,
 				MaxTokens: 1024,
 				Messages:  messages,
 				Tools:     []anthropic.BetaToolUnionParam{bashTool},
