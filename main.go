@@ -121,27 +121,6 @@ type currentToolUse struct {
 	Input string
 }
 
-// executeBashCommand executes a bash command locally and returns the output
-func executeBashCommand(command string) (string, error) {
-	cmd := exec.Command("bash", "-c", command)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-
-	output := stdout.String()
-	if stderr.Len() > 0 {
-		output += "\nError output:\n" + stderr.String()
-	}
-
-	if err != nil {
-		return output, fmt.Errorf("command failed: %v\n%s", err, output)
-	}
-
-	return output, nil
-}
-
 func main() {
 	// Define command-line flags
 	var (
@@ -325,55 +304,9 @@ func main() {
 
 			// If there were bash tool uses, execute them and continue
 			if len(toolUseBlocks) > 0 {
-				fmt.Println("\n[Executing bash commands locally...]")
-
-				// Process each tool use
-				for _, toolUse := range toolUseBlocks {
-					if toolUse.Name == "bash" {
-						// Parse the command from the input
-						var input struct {
-							Command string `json:"command"`
-						}
-						err := json.Unmarshal(toolUse.Input, &input)
-						if err != nil {
-							fmt.Printf(
-								"\nError parsing bash command: %v\n", err)
-							continue
-						}
-
-						fmt.Printf("\n$ %s\n", input.Command)
-
-						// Execute the command locally
-						output, err := executeBashCommand(input.Command)
-
-						// Create tool result
-						var toolResultContent anthropic.BetaContentBlockParamUnion
-
-						if err != nil {
-							fmt.Printf("Error: %v\n", err)
-							toolResultContent = anthropic.NewBetaToolResultBlock(
-								toolUse.ID,
-								fmt.Sprintf("Error executing command: %v\nOutput: %s",
-									err, output),
-								true, // isError
-							)
-						} else {
-							fmt.Print(output)
-							if !strings.HasSuffix(output, "\n") {
-								fmt.Println()
-							}
-							toolResultContent = anthropic.NewBetaToolResultBlock(
-								toolUse.ID,
-								output,
-								false, // isError
-							)
-						}
-
-						// Add tool result to messages
-						messages = append(messages,
-							anthropic.NewBetaUserMessage(toolResultContent))
-					}
-				}
+				toolUseResults := onToolUse(toolUseBlocks)
+				messages = append(messages,
+					anthropic.NewBetaUserMessage(toolUseResults...))
 
 				// Continue the conversation with tool results
 				continue
@@ -385,4 +318,84 @@ func main() {
 
 		fmt.Println()
 	}
+}
+
+func onToolUse(toolUseBlocks []toolUseInfo) []anthropic.BetaContentBlockParamUnion {
+	var results []anthropic.BetaContentBlockParamUnion
+
+	fmt.Println("\n[Executing bash commands locally...]")
+
+	// Process each tool use
+	for _, toolUse := range toolUseBlocks {
+		if toolUse.Name == "bash" {
+			toolUseResult := onBashToolUse(toolUse)
+			// Add tool result to messages
+			results = append(results, toolUseResult)
+		}
+	}
+
+	return results
+}
+
+func onBashToolUse(toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
+	// Create tool result
+	var toolResult anthropic.BetaContentBlockParamUnion
+
+	// Parse the command from the input
+	var input struct {
+		Command string `json:"command"`
+	}
+	err := json.Unmarshal(toolUse.Input, &input)
+	if err != nil {
+		fmt.Printf(
+			"\nError parsing bash command: %v\n", err)
+		return toolResult
+	}
+
+	fmt.Printf("\n$ %s\n", input.Command)
+
+	// Execute the command locally
+	output, err := executeBashCommand(input.Command)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		toolResult = anthropic.NewBetaToolResultBlock(
+			toolUse.ID,
+			fmt.Sprintf("Error executing command: %v\nOutput: %s",
+				err, output),
+			true, // isError
+		)
+	} else {
+		fmt.Print(output)
+		if !strings.HasSuffix(output, "\n") {
+			fmt.Println()
+		}
+		toolResult = anthropic.NewBetaToolResultBlock(
+			toolUse.ID,
+			output,
+			false, // isError
+		)
+	}
+
+	return toolResult
+}
+
+// executeBashCommand executes a bash command locally and returns the output
+func executeBashCommand(command string) (string, error) {
+	cmd := exec.Command("bash", "-c", command)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	output := stdout.String()
+	if stderr.Len() > 0 {
+		output += "\nError output:\n" + stderr.String()
+	}
+
+	if err != nil {
+		return output, fmt.Errorf("command failed: %v\n%s", err, output)
+	}
+
+	return output, nil
 }
