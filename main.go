@@ -107,7 +107,8 @@ func printAvailableModels() {
 
 // toolProviders holds the specific tool implementations for tool use
 type toolProviders struct {
-	Bash BashTool
+	Bash       BashTool
+	TextEditor TextEditorTool
 }
 
 // toolUseInfo holds information about a tool use block
@@ -135,7 +136,7 @@ func main() {
 	// Custom usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Anthropic Claude Agent with Local Bash Execution\n\n")
+		fmt.Fprintf(os.Stderr, "Anthropic Claude Agent with Local Bash and Text Editor\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
@@ -176,7 +177,8 @@ func main() {
 
 	// Instantiate tool providers
 	tools := &toolProviders{
-		Bash: NewSimpleBashTool(),
+		Bash:       NewSimpleBashTool(),
+		TextEditor: NewSimpleTextEditorTool(),
 	}
 
 	toolParams := []anthropic.BetaToolUnionParam{
@@ -184,6 +186,56 @@ func main() {
 		anthropic.BetaToolUnionParam{
 			OfBashTool20250124: &anthropic.BetaToolBash20250124Param{
 				Name: "bash",
+			},
+		},
+		// Custom text editor tool
+		anthropic.BetaToolUnionParam{
+			OfTool: &anthropic.BetaToolParam{
+				Name:        "text_editor",
+				Description: anthropic.String("A text editor tool for viewing, creating, and editing files. Supports operations: view (with optional line ranges), str_replace (exact string replacement), create (new files), insert (text insertion), and undo_edit. Use command parameter to specify operation type."),
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"command": map[string]interface{}{
+							"type": "string",
+							"enum": []string{"view", "str_replace", "create", "insert", "undo_edit"},
+							"description": "The text editor command to execute",
+						},
+						"path": map[string]interface{}{
+							"type":        "string",
+							"description": "Path to the file or directory",
+						},
+						"start": map[string]interface{}{
+							"type":        "integer",
+							"description": "Starting line number (1-indexed, optional for view command)",
+						},
+						"end": map[string]interface{}{
+							"type":        "integer",
+							"description": "Ending line number (1-indexed, optional for view command, -1 means end of file)",
+						},
+						"old_str": map[string]interface{}{
+							"type":        "string",
+							"description": "String to replace (required for str_replace command)",
+						},
+						"new_str": map[string]interface{}{
+							"type":        "string",
+							"description": "Replacement string (required for str_replace command)",
+						},
+						"file_text": map[string]interface{}{
+							"type":        "string",
+							"description": "Content for new file (required for create command)",
+						},
+						"insert_line": map[string]interface{}{
+							"type":        "integer",
+							"description": "Line number after which to insert text (0 to insert at beginning, required for insert command)",
+						},
+						"new_text": map[string]interface{}{
+							"type":        "string",
+							"description": "Text to insert (required for insert command)",
+						},
+					},
+					"required": []string{"command", "path"},
+				},
 			},
 		},
 	}
@@ -194,9 +246,10 @@ func main() {
 	// Create a scanner for user input
 	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Println("Anthropic Claude Agent with Local Bash Execution")
+	fmt.Println("Anthropic Claude Agent with Local Bash and Text Editor")
 	fmt.Printf("Using model: %s\n", *modelName)
 	fmt.Println("Commands are executed locally on your machine")
+	fmt.Println("Text editor operations are performed on local files")
 	if systemPrompt != "" {
 		fmt.Printf("System prompt: %s\n", systemPrompt)
 	}
@@ -278,6 +331,9 @@ func main() {
 						if current.Name == "bash" {
 							fmt.Printf(
 								"\n[Preparing to execute bash command locally...]\n")
+						} else if current.Name == "text_editor" {
+							fmt.Printf(
+								"\n[Preparing to execute text editor command...]\n")
 						}
 					}
 
@@ -291,7 +347,8 @@ func main() {
 					}
 
 				case anthropic.BetaRawContentBlockStopEvent:
-					if inToolUse && current.Name == "bash" {
+					if inToolUse && (current.Name == "bash" ||
+						current.Name == "text_editor") {
 						// Parse and store the tool use
 						toolUseBlocks = append(toolUseBlocks, toolUseInfo{
 							ID:    current.ID,
@@ -333,12 +390,16 @@ func main() {
 func onToolUse(tools *toolProviders, toolUseBlocks []toolUseInfo) []anthropic.BetaContentBlockParamUnion {
 	var results []anthropic.BetaContentBlockParamUnion
 
-	fmt.Println("\n[Executing bash commands locally...]")
+	fmt.Println("\n[Executing tool commands...]")
 
 	// Process each tool use
 	for _, toolUse := range toolUseBlocks {
 		if toolUse.Name == "bash" {
 			toolUseResult := onBashToolUse(tools.Bash, toolUse)
+			// Add tool result to messages
+			results = append(results, toolUseResult)
+		} else if toolUse.Name == "text_editor" {
+			toolUseResult := onTextEditorToolUse(tools.TextEditor, toolUse)
 			// Add tool result to messages
 			results = append(results, toolUseResult)
 		}
@@ -393,6 +454,109 @@ func onBashToolUse(bashTool BashTool, toolUse toolUseInfo) anthropic.BetaContent
 		output,
 		err != nil, // isError
 	)
+
+	return toolResult
+}
+
+func onTextEditorToolUse(textEditor TextEditorTool, toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
+	// Create tool result
+	var toolResult anthropic.BetaContentBlockParamUnion
+
+	// Parse the command from the input
+	var input struct {
+		Command    string `json:"command"`
+		Path       string `json:"path"`
+		Start      *int   `json:"start"`
+		End        *int   `json:"end"`
+		OldStr     string `json:"old_str"`
+		NewStr     string `json:"new_str"`
+		FileText   string `json:"file_text"`
+		InsertLine *int   `json:"insert_line"`
+		NewText    string `json:"new_text"`
+	}
+	err := json.Unmarshal(toolUse.Input, &input)
+	if err != nil {
+		fmt.Printf("\nError parsing text editor command: %v\n", err)
+		toolResult = anthropic.NewBetaToolResultBlock(
+			toolUse.ID,
+			fmt.Sprintf("Error parsing command: %v", err),
+			true, // isError
+		)
+		return toolResult
+	}
+
+	var output string
+	var execErr error
+
+	switch input.Command {
+	case "view":
+		fmt.Printf("\n[text_editor] Viewing: %s", input.Path)
+		if input.Start != nil || input.End != nil {
+			fmt.Printf(" (lines %v-%v)", input.Start, input.End)
+		}
+		fmt.Println()
+
+		output, execErr = textEditor.View(input.Path, input.Start, input.End)
+
+	case "str_replace":
+		fmt.Printf("\n[text_editor] String replace in: %s\n", input.Path)
+		fmt.Printf("  Replacing: %q\n", input.OldStr)
+		fmt.Printf("  With: %q\n", input.NewStr)
+
+		execErr = textEditor.StringReplace(input.Path, input.OldStr,
+			input.NewStr)
+		if execErr == nil {
+			output = "String replacement completed successfully"
+		}
+
+	case "create":
+		fmt.Printf("\n[text_editor] Creating file: %s\n", input.Path)
+
+		execErr = textEditor.Create(input.Path, input.FileText)
+		if execErr == nil {
+			output = fmt.Sprintf("File %s created successfully", input.Path)
+		}
+
+	case "insert":
+		if input.InsertLine == nil {
+			execErr = fmt.Errorf("insert_line is required for insert command")
+		} else {
+			fmt.Printf("\n[text_editor] Inserting text in: %s (after line %d)\n",
+				input.Path, *input.InsertLine)
+
+			execErr = textEditor.Insert(input.Path, *input.InsertLine,
+				input.NewText)
+			if execErr == nil {
+				output = "Text insertion completed successfully"
+			}
+		}
+
+	case "undo_edit":
+		fmt.Printf("\n[text_editor] Undoing last edit in: %s\n", input.Path)
+
+		execErr = textEditor.UndoEdit(input.Path)
+		if execErr == nil {
+			output = "Undo completed successfully"
+		}
+
+	default:
+		execErr = fmt.Errorf("unknown text editor command: %s", input.Command)
+	}
+
+	if execErr != nil {
+		fmt.Printf("Error: %s\n", execErr)
+		toolResult = anthropic.NewBetaToolResultBlock(
+			toolUse.ID,
+			fmt.Sprintf("Error: %v", execErr),
+			true, // isError
+		)
+	} else {
+		toolResult = anthropic.NewBetaToolResultBlock(
+			toolUse.ID,
+			output,
+			false, // isError
+		)
+	}
 
 	return toolResult
 }
