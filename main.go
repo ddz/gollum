@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,14 +15,10 @@ import (
 )
 
 // systemPrompt defines the system prompt for the assistant.
-// Modify this string to customize the agent's behavior and personality.
-// Leave empty ("") to use Claude's default behavior.
+// The content is embedded from prompt.txt at compile time.
 //
-// Examples:
-// const systemPrompt = "You are a helpful coding assistant. Be concise and practical."
-// const systemPrompt = "You are an expert Linux system administrator."
-// const systemPrompt = "You are a helpful AI assistant that specializes in data analysis. Always explain your reasoning step by step."
-const systemPrompt = ""
+//go:embed prompt.txt
+var systemPrompt string
 
 // addLineNumbers adds line numbers to the beginning of each line in the text
 func addLineNumbers(text string, startLine *int) string {

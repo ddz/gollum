@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,24 @@ func TestAddLineNumbers(t *testing.T) {
 				t.Errorf("addLineNumbers() = %q, want %q", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSystemPromptEmbedded(t *testing.T) {
+	// Test that the systemPrompt is properly embedded from prompt.txt
+	if systemPrompt == "" {
+		t.Error("systemPrompt should not be empty when embedded from prompt.txt")
+	}
+
+	// Check that it contains expected content from prompt.txt
+	expectedContent := []string{
+		"bash commands",
+		"text editing capabilities",
+	}
+
+	for _, expected := range expectedContent {
+		if !strings.Contains(systemPrompt, expected) {
+			t.Errorf("systemPrompt should contain %q, but it doesn't. Content: %q", expected, systemPrompt)
+		}
 	}
 }
