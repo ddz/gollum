@@ -23,6 +23,39 @@ import (
 // const systemPrompt = "You are a helpful AI assistant that specializes in data analysis. Always explain your reasoning step by step."
 const systemPrompt = ""
 
+// addLineNumbers adds line numbers to the beginning of each line in the text
+func addLineNumbers(text string, startLine *int) string {
+	if text == "" {
+		return text
+	}
+
+	lines := strings.Split(text, "\n")
+	var result strings.Builder
+
+	// Determine starting line number
+	start := 1
+	if startLine != nil {
+		start = *startLine
+	}
+
+	for i, line := range lines {
+		lineNum := start + i
+		// Don't add line number to the last empty line if the text ends with \n
+		if i == len(lines)-1 && line == "" {
+			break
+		}
+		result.WriteString(fmt.Sprintf("%d: %s\n", lineNum, line))
+	}
+
+	// Remove the trailing newline if we added one
+	output := result.String()
+	if strings.HasSuffix(output, "\n") {
+		output = output[:len(output)-1]
+	}
+
+	return output
+}
+
 // getTextEditorToolForModel returns the appropriate text editor tool configuration for the given model
 func getTextEditorToolForModel(model anthropic.Model) anthropic.BetaToolUnionParam {
 	modelStr := string(model)
@@ -527,7 +560,11 @@ func onTextEditorToolUse(textEditor TextEditorTool, toolUse toolUseInfo) anthrop
 		}
 		fmt.Println()
 
-		output, execErr = textEditor.View(input.Path, start, end)
+		rawOutput, execErr := textEditor.View(input.Path, start, end)
+		if execErr == nil {
+			// Add line numbers to the output
+			output = addLineNumbers(rawOutput, start)
+		}
 
 	case "str_replace":
 		fmt.Printf("\n[%s] String replace in: %s\n", toolName, input.Path)
