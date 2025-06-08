@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -107,6 +105,11 @@ func printAvailableModels() {
 	fmt.Println("\nYou can also specify any model name directly (for future models).")
 }
 
+// toolProviders holds the specific tool implementations for tool use
+type toolProviders struct {
+	Bash BashTool
+}
+
 // toolUseInfo holds information about a tool use block
 type toolUseInfo struct {
 	ID    string
@@ -171,10 +174,17 @@ func main() {
 	// Create client
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
-	// Use the built-in Bash20250124 tool
-	bashTool := anthropic.BetaToolUnionParam{
-		OfBashTool20250124: &anthropic.BetaToolBash20250124Param{
-			Name: "bash",
+	// Instantiate tool providers
+	tools := &toolProviders{
+		Bash: NewSimpleBashTool(),
+	}
+
+	toolParams := []anthropic.BetaToolUnionParam{
+		// Use the built-in Bash20250124 tool
+		anthropic.BetaToolUnionParam{
+			OfBashTool20250124: &anthropic.BetaToolBash20250124Param{
+				Name: "bash",
+			},
 		},
 	}
 
@@ -221,7 +231,7 @@ func main() {
 				Model:     selectedModel,
 				MaxTokens: 1024,
 				Messages:  messages,
-				Tools:     []anthropic.BetaToolUnionParam{bashTool},
+				Tools:     toolParams,
 				Betas: []anthropic.AnthropicBeta{
 					anthropic.AnthropicBetaComputerUse2025_01_24,
 				},
@@ -304,7 +314,7 @@ func main() {
 
 			// If there were bash tool uses, execute them and continue
 			if len(toolUseBlocks) > 0 {
-				toolUseResults := onToolUse(toolUseBlocks)
+				toolUseResults := onToolUse(tools, toolUseBlocks)
 				messages = append(messages,
 					anthropic.NewBetaUserMessage(toolUseResults...))
 
@@ -320,7 +330,7 @@ func main() {
 	}
 }
 
-func onToolUse(toolUseBlocks []toolUseInfo) []anthropic.BetaContentBlockParamUnion {
+func onToolUse(tools *toolProviders, toolUseBlocks []toolUseInfo) []anthropic.BetaContentBlockParamUnion {
 	var results []anthropic.BetaContentBlockParamUnion
 
 	fmt.Println("\n[Executing bash commands locally...]")
@@ -328,7 +338,7 @@ func onToolUse(toolUseBlocks []toolUseInfo) []anthropic.BetaContentBlockParamUni
 	// Process each tool use
 	for _, toolUse := range toolUseBlocks {
 		if toolUse.Name == "bash" {
-			toolUseResult := onBashToolUse(toolUse)
+			toolUseResult := onBashToolUse(tools.Bash, toolUse)
 			// Add tool result to messages
 			results = append(results, toolUseResult)
 		}
@@ -337,14 +347,14 @@ func onToolUse(toolUseBlocks []toolUseInfo) []anthropic.BetaContentBlockParamUni
 	return results
 }
 
-func onBashToolUse(toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
+func onBashToolUse(bashTool BashTool, toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
 	// Create tool result
 	var toolResult anthropic.BetaContentBlockParamUnion
 
 	// Parse the command from the input
 	var input struct {
 		Command string `json:"command"`
-		Restart bool `json:"restart"`
+		Restart bool   `json:"restart"`
 	}
 	err := json.Unmarshal(toolUse.Input, &input)
 	if err != nil {
@@ -355,11 +365,13 @@ func onBashToolUse(toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
 
 	if input.Restart {
 		fmt.Printf("\n Restarting bash session...")
+		message, err := bashTool.Restart()
+
 		// No actual need to restart we don't support sessions yet
 		toolResult = anthropic.NewBetaToolResultBlock(
 			toolUse.ID,
-			"Bash session restarted",
-			false, // isError
+			message,
+			err != nil, // isError
 		)
 
 		return toolResult
@@ -368,47 +380,19 @@ func onBashToolUse(toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
 	fmt.Printf("\n$ %s\n", input.Command)
 
 	// Execute the command locally
-	output, err := executeBashCommand(input.Command)
+	stdout, stderr, err := bashTool.ExecuteCommand(input.Command)
+	output := fmt.Sprintf("<stdout>%s</stdout><stderr>%s</stderr>",
+		stdout, stderr)
+
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		toolResult = anthropic.NewBetaToolResultBlock(
-			toolUse.ID,
-			fmt.Sprintf("Error executing command: %v\nOutput: %s",
-				err, output),
-			true, // isError
-		)
-	} else {
-		fmt.Print(output)
-		if !strings.HasSuffix(output, "\n") {
-			fmt.Println()
-		}
-		toolResult = anthropic.NewBetaToolResultBlock(
-			toolUse.ID,
-			output,
-			false, // isError
-		)
+		fmt.Printf("Error: %s\n", err)
 	}
+
+	toolResult = anthropic.NewBetaToolResultBlock(
+		toolUse.ID,
+		output,
+		err != nil, // isError
+	)
 
 	return toolResult
-}
-
-// executeBashCommand executes a bash command locally and returns the output
-func executeBashCommand(command string) (string, error) {
-	cmd := exec.Command("bash", "-c", command)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-
-	output := stdout.String()
-	if stderr.Len() > 0 {
-		output += "\nError output:\n" + stderr.String()
-	}
-
-	if err != nil {
-		return output, fmt.Errorf("command failed: %v\n%s", err, output)
-	}
-
-	return output, nil
 }
