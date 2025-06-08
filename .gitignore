@@ -1,2 +1,5 @@
 *~
 gollum
+
+# Readline history file
+.gollum_history

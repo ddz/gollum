@@ -1,17 +1,18 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/chzyer/readline"
 )
 
 // systemPrompt defines the system prompt for the assistant.
@@ -176,6 +177,24 @@ type currentToolUse struct {
 	Input string
 }
 
+// completer provides auto-completion for common commands
+var completer = readline.NewPrefixCompleter(
+	readline.PcItem("/exit"),
+	readline.PcItem("/quit"),
+	readline.PcItem("/help"),
+	readline.PcItem("/clear"),
+)
+
+// filterInput filters input runes
+func filterInput(r rune) (rune, bool) {
+	switch r {
+	// block CtrlZ feature
+	case readline.CharCtrlZ:
+		return r, false
+	}
+	return r, true
+}
+
 func main() {
 	// Define command-line flags
 	var (
@@ -250,29 +269,76 @@ func main() {
 	// Initialize conversation
 	messages := []anthropic.BetaMessageParam{}
 
-	// Create a scanner for user input
-	scanner := bufio.NewScanner(os.Stdin)
+	// Create readline instance with history and editing support
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "You: ",
+		HistoryFile:     ".gollum_history",
+		AutoComplete:    completer,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+		
+		HistorySearchFold:   true,
+		FuncFilterInputRune: filterInput,
+	})
+	if err != nil {
+		fmt.Printf("Error creating readline: %v\n", err)
+		os.Exit(1)
+	}
+	defer rl.Close()
 
 	fmt.Println("Anthropic Claude Agent with Local Bash and Built-in Text Editor")
 	fmt.Printf("Using model: %s\n", *modelName)
 	fmt.Println("Commands are executed locally on your machine")
 	fmt.Printf("Text editor tool: %s\n", textEditorToolName)
+	fmt.Println("History is saved to .gollum_history")
+	fmt.Println("Use Ctrl+R for reverse history search, Ctrl+C to interrupt")
 	if systemPrompt != "" {
 		fmt.Printf("System prompt: %s\n", systemPrompt)
 	}
-	fmt.Println("Type 'exit' to quit")
+	fmt.Println("Type '/exit' to quit, '/help' for special commands")
 	fmt.Println("---------------------------------------------------")
 
 	for {
-		fmt.Print("\nYou: ")
-		if !scanner.Scan() {
+		userInput, err := rl.Readline()
+		if err == readline.ErrInterrupt {
+			if len(userInput) == 0 {
+				fmt.Println("\nGoodbye!")
+				break
+			} else {
+				continue
+			}
+		} else if err == io.EOF {
+			fmt.Println("\nGoodbye!")
+			break
+		} else if err != nil {
+			fmt.Printf("\nError reading input: %v\n", err)
 			break
 		}
 
-		userInput := scanner.Text()
-		if strings.ToLower(userInput) == "exit" {
+		userInput = strings.TrimSpace(userInput)
+		if userInput == "" {
+			continue
+		}
+		
+		// Handle special commands
+		switch strings.ToLower(userInput) {
+		case "/exit", "/quit":
 			fmt.Println("Goodbye!")
-			break
+			return
+		case "/clear":
+			readline.ClearScreen(rl)
+			continue
+		case "/help":
+			fmt.Println("\nSpecial commands:")
+			fmt.Println("  /exit, /quit - Exit the application")  
+			fmt.Println("  /clear       - Clear the screen")
+			fmt.Println("  /help        - Show this help")
+			fmt.Println("\nKeyboard shortcuts:")
+			fmt.Println("  Ctrl+R       - Reverse history search")
+			fmt.Println("  Ctrl+C       - Interrupt current input")
+			fmt.Println("  Ctrl+D       - Exit (EOF)")
+			fmt.Println("  Up/Down      - Navigate history")
+			continue
 		}
 
 		// Add user message
