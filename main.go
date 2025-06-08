@@ -344,11 +344,24 @@ func onBashToolUse(toolUse toolUseInfo) anthropic.BetaContentBlockParamUnion {
 	// Parse the command from the input
 	var input struct {
 		Command string `json:"command"`
+		Restart bool `json:"restart"`
 	}
 	err := json.Unmarshal(toolUse.Input, &input)
 	if err != nil {
 		fmt.Printf(
 			"\nError parsing bash command: %v\n", err)
+		return toolResult
+	}
+
+	if input.Restart {
+		fmt.Printf("\n Restarting bash session...")
+		// No actual need to restart we don't support sessions yet
+		toolResult = anthropic.NewBetaToolResultBlock(
+			toolUse.ID,
+			"Bash session restarted",
+			false, // isError
+		)
+
 		return toolResult
 	}
 
