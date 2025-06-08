@@ -23,7 +23,56 @@ import (
 // const systemPrompt = "You are a helpful AI assistant that specializes in data analysis. Always explain your reasoning step by step."
 const systemPrompt = ""
 
-// getModelFromString converts a model string to the appropriate anthropic.Model constant
+// getTextEditorToolForModel returns the appropriate text editor tool configuration for the given model
+func getTextEditorToolForModel(model anthropic.Model) anthropic.BetaToolUnionParam {
+	modelStr := string(model)
+
+	// Claude 4 models use text_editor_20250429
+	if strings.Contains(modelStr, "claude-4") ||
+		strings.Contains(modelStr, "claude-sonnet-4") ||
+		strings.Contains(modelStr, "claude-opus-4") {
+		return anthropic.BetaToolUnionParam{
+			OfTextEditor20250429: &anthropic.BetaToolTextEditor20250429Param{
+				Name: "str_replace_based_edit_tool",
+			},
+		}
+	}
+
+	// Claude 3.7 and Claude 3.5 models use text_editor_20250124
+	if strings.Contains(modelStr, "claude-3-7") ||
+		strings.Contains(modelStr, "claude-3.7") ||
+		strings.Contains(modelStr, "claude-3-5") ||
+		strings.Contains(modelStr, "claude-3.5") {
+		return anthropic.BetaToolUnionParam{
+			OfTextEditor20250124: &anthropic.BetaToolTextEditor20250124Param{
+				Name: "str_replace_editor",
+			},
+		}
+	}
+
+	// Claude 3 and Claude 2 models use text_editor_20241022
+	// This includes claude-3-*, claude-2-*, etc.
+	return anthropic.BetaToolUnionParam{
+		OfTextEditor20241022: &anthropic.BetaToolTextEditor20241022Param{
+			Name: "str_replace_editor",
+		},
+	}
+}
+
+// getTextEditorToolName returns the tool name for the given model
+func getTextEditorToolName(model anthropic.Model) string {
+	modelStr := string(model)
+
+	// Claude 4 models use str_replace_based_edit_tool
+	if strings.Contains(modelStr, "claude-4") ||
+		strings.Contains(modelStr, "claude-sonnet-4") ||
+		strings.Contains(modelStr, "claude-opus-4") {
+		return "str_replace_based_edit_tool"
+	}
+
+	// Claude 3.7, 3.5, 3, and 2 models use str_replace_editor
+	return "str_replace_editor"
+}
 func getModelFromString(modelStr string) anthropic.Model {
 	switch modelStr {
 	// Claude 4 models
@@ -80,29 +129,30 @@ func getModelFromString(modelStr string) anthropic.Model {
 // printAvailableModels prints the list of supported model names
 func printAvailableModels() {
 	fmt.Println("\nSupported model names:")
-	fmt.Println("Claude 4 models:")
+	fmt.Println("Claude 4 models (text_editor_20250429):")
 	fmt.Println("  claude-sonnet-4-0, claude-4-sonnet")
 	fmt.Println("  claude-sonnet-4-20250514, claude-4-sonnet-20250514")
 	fmt.Println("  claude-opus-4-0, claude-4-opus")
 	fmt.Println("  claude-opus-4-20250514, claude-4-opus-20250514")
-	fmt.Println("\nClaude 3.7 models:")
+	fmt.Println("\nClaude 3.7 models (text_editor_20250124):")
 	fmt.Println("  claude-3-7-sonnet-latest, claude-3.7-sonnet-latest")
 	fmt.Println("  claude-3-7-sonnet-20250219, claude-3.7-sonnet-20250219")
-	fmt.Println("\nClaude 3.5 models:")
+	fmt.Println("\nClaude 3.5 models (text_editor_20250124):")
 	fmt.Println("  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest (default)")
 	fmt.Println("  claude-3-5-sonnet-20241022, claude-3.5-sonnet-20241022")
 	fmt.Println("  claude-3-5-sonnet-20240620, claude-3.5-sonnet-20240620")
 	fmt.Println("  claude-3-5-haiku-latest, claude-3.5-haiku-latest")
 	fmt.Println("  claude-3-5-haiku-20241022, claude-3.5-haiku-20241022")
-	fmt.Println("\nClaude 3 models:")
+	fmt.Println("\nClaude 3 models (text_editor_20241022):")
 	fmt.Println("  claude-3-opus-latest, claude-3-opus")
 	fmt.Println("  claude-3-opus-20240229")
 	fmt.Println("  claude-3-sonnet-20240229")
 	fmt.Println("  claude-3-haiku-20240307")
-	fmt.Println("\nClaude 2 models:")
+	fmt.Println("\nClaude 2 models (text_editor_20241022):")
 	fmt.Println("  claude-2.1")
 	fmt.Println("  claude-2.0")
 	fmt.Println("\nYou can also specify any model name directly (for future models).")
+	fmt.Println("Text editor tool versions are automatically selected based on model compatibility.")
 }
 
 // toolProviders holds the specific tool implementations for tool use
@@ -136,7 +186,7 @@ func main() {
 	// Custom usage function
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Anthropic Claude Agent with Local Bash and Text Editor\n\n")
+		fmt.Fprintf(os.Stderr, "Anthropic Claude Agent with Local Bash and Built-in Text Editor\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
@@ -181,6 +231,10 @@ func main() {
 		TextEditor: NewSimpleTextEditorTool(),
 	}
 
+	// Get the appropriate text editor tool for the selected model
+	textEditorTool := getTextEditorToolForModel(selectedModel)
+	textEditorToolName := getTextEditorToolName(selectedModel)
+
 	toolParams := []anthropic.BetaToolUnionParam{
 		// Use the built-in Bash20250124 tool
 		anthropic.BetaToolUnionParam{
@@ -188,56 +242,8 @@ func main() {
 				Name: "bash",
 			},
 		},
-		// Custom text editor tool
-		anthropic.BetaToolUnionParam{
-			OfTool: &anthropic.BetaToolParam{
-				Name:        "text_editor",
-				Description: anthropic.String("A text editor tool for viewing, creating, and editing files. Supports operations: view (with optional line ranges), str_replace (exact string replacement), create (new files), insert (text insertion), and undo_edit. Use command parameter to specify operation type."),
-				InputSchema: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"command": map[string]interface{}{
-							"type": "string",
-							"enum": []string{"view", "str_replace", "create", "insert", "undo_edit"},
-							"description": "The text editor command to execute",
-						},
-						"path": map[string]interface{}{
-							"type":        "string",
-							"description": "Path to the file or directory",
-						},
-						"start": map[string]interface{}{
-							"type":        "integer",
-							"description": "Starting line number (1-indexed, optional for view command)",
-						},
-						"end": map[string]interface{}{
-							"type":        "integer",
-							"description": "Ending line number (1-indexed, optional for view command, -1 means end of file)",
-						},
-						"old_str": map[string]interface{}{
-							"type":        "string",
-							"description": "String to replace (required for str_replace command)",
-						},
-						"new_str": map[string]interface{}{
-							"type":        "string",
-							"description": "Replacement string (required for str_replace command)",
-						},
-						"file_text": map[string]interface{}{
-							"type":        "string",
-							"description": "Content for new file (required for create command)",
-						},
-						"insert_line": map[string]interface{}{
-							"type":        "integer",
-							"description": "Line number after which to insert text (0 to insert at beginning, required for insert command)",
-						},
-						"new_text": map[string]interface{}{
-							"type":        "string",
-							"description": "Text to insert (required for insert command)",
-						},
-					},
-					"required": []string{"command", "path"},
-				},
-			},
-		},
+		// Use the appropriate text editor tool for the model
+		textEditorTool,
 	}
 
 	// Initialize conversation
@@ -246,10 +252,10 @@ func main() {
 	// Create a scanner for user input
 	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Println("Anthropic Claude Agent with Local Bash and Text Editor")
+	fmt.Println("Anthropic Claude Agent with Local Bash and Built-in Text Editor")
 	fmt.Printf("Using model: %s\n", *modelName)
 	fmt.Println("Commands are executed locally on your machine")
-	fmt.Println("Text editor operations are performed on local files")
+	fmt.Printf("Text editor tool: %s\n", textEditorToolName)
 	if systemPrompt != "" {
 		fmt.Printf("System prompt: %s\n", systemPrompt)
 	}
@@ -331,7 +337,7 @@ func main() {
 						if current.Name == "bash" {
 							fmt.Printf(
 								"\n[Preparing to execute bash command locally...]\n")
-						} else if current.Name == "text_editor" {
+						} else if current.Name == textEditorToolName {
 							fmt.Printf(
 								"\n[Preparing to execute text editor command...]\n")
 						}
@@ -348,7 +354,7 @@ func main() {
 
 				case anthropic.BetaRawContentBlockStopEvent:
 					if inToolUse && (current.Name == "bash" ||
-						current.Name == "text_editor") {
+						current.Name == textEditorToolName) {
 						// Parse and store the tool use
 						toolUseBlocks = append(toolUseBlocks, toolUseInfo{
 							ID:    current.ID,
@@ -398,7 +404,7 @@ func onToolUse(tools *toolProviders, toolUseBlocks []toolUseInfo) []anthropic.Be
 			toolUseResult := onBashToolUse(tools.Bash, toolUse)
 			// Add tool result to messages
 			results = append(results, toolUseResult)
-		} else if toolUse.Name == "text_editor" {
+		} else if toolUse.Name == "str_replace_editor" || toolUse.Name == "str_replace_based_edit_tool" {
 			toolUseResult := onTextEditorToolUse(tools.TextEditor, toolUse)
 			// Add tool result to messages
 			results = append(results, toolUseResult)
@@ -462,14 +468,19 @@ func onTextEditorToolUse(textEditor TextEditorTool, toolUse toolUseInfo) anthrop
 	// Create tool result
 	var toolResult anthropic.BetaContentBlockParamUnion
 
-	// Parse the command from the input
+	// The built-in text editor tool has a different schema than our custom one
+	// It primarily focuses on string replacement operations
 	var input struct {
-		Command    string `json:"command"`
-		Path       string `json:"path"`
+		// Built-in text editor fields
+		Command   string `json:"command"`
+		Path      string `json:"path"`
+		OldStr    string `json:"old_str"`
+		NewStr    string `json:"new_str"`
+		ViewRange []int  `json:"view_range,omitempty"`
+
+		// Legacy custom fields (for backward compatibility)
 		Start      *int   `json:"start"`
 		End        *int   `json:"end"`
-		OldStr     string `json:"old_str"`
-		NewStr     string `json:"new_str"`
 		FileText   string `json:"file_text"`
 		InsertLine *int   `json:"insert_line"`
 		NewText    string `json:"new_text"`
@@ -488,29 +499,48 @@ func onTextEditorToolUse(textEditor TextEditorTool, toolUse toolUseInfo) anthrop
 	var output string
 	var execErr error
 
+	// Use the actual tool name from the tool use for logging
+	toolName := toolUse.Name
+
 	switch input.Command {
 	case "view":
-		fmt.Printf("\n[text_editor] Viewing: %s", input.Path)
-		if input.Start != nil || input.End != nil {
-			fmt.Printf(" (lines %v-%v)", input.Start, input.End)
+		fmt.Printf("\n[%s] Viewing: %s", toolName, input.Path)
+
+		// Handle view_range from built-in tool
+		var start, end *int
+		if len(input.ViewRange) >= 1 {
+			start = &input.ViewRange[0]
+		}
+		if len(input.ViewRange) >= 2 {
+			end = &input.ViewRange[1]
+		}
+		// Fall back to legacy start/end fields
+		if start == nil && input.Start != nil {
+			start = input.Start
+		}
+		if end == nil && input.End != nil {
+			end = input.End
+		}
+
+		if start != nil || end != nil {
+			fmt.Printf(" (lines %v-%v)", start, end)
 		}
 		fmt.Println()
 
-		output, execErr = textEditor.View(input.Path, input.Start, input.End)
+		output, execErr = textEditor.View(input.Path, start, end)
 
 	case "str_replace":
-		fmt.Printf("\n[text_editor] String replace in: %s\n", input.Path)
+		fmt.Printf("\n[%s] String replace in: %s\n", toolName, input.Path)
 		fmt.Printf("  Replacing: %q\n", input.OldStr)
 		fmt.Printf("  With: %q\n", input.NewStr)
 
-		execErr = textEditor.StringReplace(input.Path, input.OldStr,
-			input.NewStr)
+		execErr = textEditor.StringReplace(input.Path, input.OldStr, input.NewStr)
 		if execErr == nil {
 			output = "String replacement completed successfully"
 		}
 
 	case "create":
-		fmt.Printf("\n[text_editor] Creating file: %s\n", input.Path)
+		fmt.Printf("\n[%s] Creating file: %s\n", toolName, input.Path)
 
 		execErr = textEditor.Create(input.Path, input.FileText)
 		if execErr == nil {
@@ -521,18 +551,17 @@ func onTextEditorToolUse(textEditor TextEditorTool, toolUse toolUseInfo) anthrop
 		if input.InsertLine == nil {
 			execErr = fmt.Errorf("insert_line is required for insert command")
 		} else {
-			fmt.Printf("\n[text_editor] Inserting text in: %s (after line %d)\n",
-				input.Path, *input.InsertLine)
+			fmt.Printf("\n[%s] Inserting text in: %s (after line %d)\n",
+				toolName, input.Path, *input.InsertLine)
 
-			execErr = textEditor.Insert(input.Path, *input.InsertLine,
-				input.NewText)
+			execErr = textEditor.Insert(input.Path, *input.InsertLine, input.NewText)
 			if execErr == nil {
 				output = "Text insertion completed successfully"
 			}
 		}
 
 	case "undo_edit":
-		fmt.Printf("\n[text_editor] Undoing last edit in: %s\n", input.Path)
+		fmt.Printf("\n[%s] Undoing last edit in: %s\n", toolName, input.Path)
 
 		execErr = textEditor.UndoEdit(input.Path)
 		if execErr == nil {
