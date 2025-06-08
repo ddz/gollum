@@ -68,11 +68,11 @@ func getTextEditorToolForModel(model anthropic.Model) anthropic.BetaToolUnionPar
 		}
 	}
 
-	// Claude 3.7 and Claude 3.5 models use text_editor_20250124
+	// Claude 3.7 and Claude 3.5 Sonnet models use text_editor_20250124
 	if strings.Contains(modelStr, "claude-3-7") ||
 		strings.Contains(modelStr, "claude-3.7") ||
-		strings.Contains(modelStr, "claude-3-5") ||
-		strings.Contains(modelStr, "claude-3.5") {
+		(strings.Contains(modelStr, "claude-3-5") && strings.Contains(modelStr, "sonnet")) ||
+		(strings.Contains(modelStr, "claude-3.5") && strings.Contains(modelStr, "sonnet")) {
 		return anthropic.BetaToolUnionParam{
 			OfTextEditor20250124: &anthropic.BetaToolTextEditor20250124Param{
 				Name: "str_replace_editor",
@@ -80,10 +80,9 @@ func getTextEditorToolForModel(model anthropic.Model) anthropic.BetaToolUnionPar
 		}
 	}
 
-	// Claude 3 and Claude 2 models use text_editor_20241022
-	// This includes claude-3-*, claude-2-*, etc.
+	// Fallback for any unknown models - use text_editor_20250124 as default
 	return anthropic.BetaToolUnionParam{
-		OfTextEditor20241022: &anthropic.BetaToolTextEditor20241022Param{
+		OfTextEditor20250124: &anthropic.BetaToolTextEditor20250124Param{
 			Name: "str_replace_editor",
 		},
 	}
@@ -100,7 +99,7 @@ func getTextEditorToolName(model anthropic.Model) string {
 		return "str_replace_based_edit_tool"
 	}
 
-	// Claude 3.7, 3.5, 3, and 2 models use str_replace_editor
+	// Claude 3.7 and 3.5 Sonnet models use str_replace_editor
 	return "str_replace_editor"
 }
 func getModelFromString(modelStr string) anthropic.Model {
@@ -121,33 +120,13 @@ func getModelFromString(modelStr string) anthropic.Model {
 	case "claude-3-7-sonnet-20250219", "claude-3.7-sonnet-20250219":
 		return anthropic.ModelClaude3_7Sonnet20250219
 
-	// Claude 3.5 models
+	// Claude 3.5 Sonnet models (Haiku models removed)
 	case "claude-3-5-sonnet-latest", "claude-3.5-sonnet-latest":
 		return anthropic.ModelClaude3_5SonnetLatest
 	case "claude-3-5-sonnet-20241022", "claude-3.5-sonnet-20241022":
 		return anthropic.ModelClaude3_5Sonnet20241022
 	case "claude-3-5-sonnet-20240620", "claude-3.5-sonnet-20240620":
 		return anthropic.ModelClaude_3_5_Sonnet_20240620
-	case "claude-3-5-haiku-latest", "claude-3.5-haiku-latest":
-		return anthropic.ModelClaude3_5HaikuLatest
-	case "claude-3-5-haiku-20241022", "claude-3.5-haiku-20241022":
-		return anthropic.ModelClaude3_5Haiku20241022
-
-	// Claude 3 models
-	case "claude-3-opus-latest", "claude-3-opus":
-		return anthropic.ModelClaude3OpusLatest
-	case "claude-3-opus-20240229":
-		return anthropic.ModelClaude_3_Opus_20240229
-	case "claude-3-sonnet-20240229":
-		return anthropic.ModelClaude_3_Sonnet_20240229
-	case "claude-3-haiku-20240307":
-		return anthropic.ModelClaude_3_Haiku_20240307
-
-	// Claude 2 models
-	case "claude-2.1":
-		return anthropic.ModelClaude_2_1
-	case "claude-2.0":
-		return anthropic.ModelClaude_2_0
 
 	default:
 		// Return the raw string as a Model - this allows for future models
@@ -167,22 +146,14 @@ func printAvailableModels() {
 	fmt.Println("\nClaude 3.7 models (text_editor_20250124):")
 	fmt.Println("  claude-3-7-sonnet-latest, claude-3.7-sonnet-latest")
 	fmt.Println("  claude-3-7-sonnet-20250219, claude-3.7-sonnet-20250219")
-	fmt.Println("\nClaude 3.5 models (text_editor_20250124):")
+	fmt.Println("\nClaude 3.5 Sonnet models (text_editor_20250124):")
 	fmt.Println("  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest (default)")
 	fmt.Println("  claude-3-5-sonnet-20241022, claude-3.5-sonnet-20241022")
 	fmt.Println("  claude-3-5-sonnet-20240620, claude-3.5-sonnet-20240620")
-	fmt.Println("  claude-3-5-haiku-latest, claude-3.5-haiku-latest")
-	fmt.Println("  claude-3-5-haiku-20241022, claude-3.5-haiku-20241022")
-	fmt.Println("\nClaude 3 models (text_editor_20241022):")
-	fmt.Println("  claude-3-opus-latest, claude-3-opus")
-	fmt.Println("  claude-3-opus-20240229")
-	fmt.Println("  claude-3-sonnet-20240229")
-	fmt.Println("  claude-3-haiku-20240307")
-	fmt.Println("\nClaude 2 models (text_editor_20241022):")
-	fmt.Println("  claude-2.1")
-	fmt.Println("  claude-2.0")
 	fmt.Println("\nYou can also specify any model name directly (for future models).")
 	fmt.Println("Text editor tool versions are automatically selected based on model compatibility.")
+	fmt.Println("\nNote: Only models Claude 3.5 Sonnet and later are supported due to")
+	fmt.Println("text editor and bash tool requirements.")
 }
 
 // toolProviders holds the specific tool implementations for tool use
