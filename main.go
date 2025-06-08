@@ -81,7 +81,7 @@ func getModelFromString(modelStr string) anthropic.Model {
 func printAvailableModels() {
 	fmt.Println("\nSupported model names:")
 	fmt.Println("Claude 4 models:")
-	fmt.Println("  claude-sonnet-4-0, claude-4-sonnet (default)")
+	fmt.Println("  claude-sonnet-4-0, claude-4-sonnet")
 	fmt.Println("  claude-sonnet-4-20250514, claude-4-sonnet-20250514")
 	fmt.Println("  claude-opus-4-0, claude-4-opus")
 	fmt.Println("  claude-opus-4-20250514, claude-4-opus-20250514")
@@ -89,7 +89,7 @@ func printAvailableModels() {
 	fmt.Println("  claude-3-7-sonnet-latest, claude-3.7-sonnet-latest")
 	fmt.Println("  claude-3-7-sonnet-20250219, claude-3.7-sonnet-20250219")
 	fmt.Println("\nClaude 3.5 models:")
-	fmt.Println("  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest")
+	fmt.Println("  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest (default)")
 	fmt.Println("  claude-3-5-sonnet-20241022, claude-3.5-sonnet-20241022")
 	fmt.Println("  claude-3-5-sonnet-20240620, claude-3.5-sonnet-20240620")
 	fmt.Println("  claude-3-5-haiku-latest, claude-3.5-haiku-latest")
@@ -127,7 +127,7 @@ type currentToolUse struct {
 func main() {
 	// Define command-line flags
 	var (
-		modelName  = flag.String("model", "claude-sonnet-4-0", "Model to use (e.g., claude-sonnet-4-0, claude-3-5-sonnet-latest)")
+		modelName  = flag.String("model", "claude-3-5-sonnet-latest", "Model to use (e.g., claude-sonnet-4-0, claude-3-5-sonnet-latest)")
 		listModels = flag.Bool("list-models", false, "List available model names and exit")
 		help       = flag.Bool("help", false, "Show help message")
 	)
@@ -141,8 +141,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY    Anthropic API key (required)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  %s                                   # Use default Claude 4 Sonnet model\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -model claude-3-5-sonnet-latest   # Use Claude 3.5 Sonnet\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s                                   # Use default Claude 3.5 Sonnet model\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -model claude-sonnet-4-0          # Use Claude 4 Sonnet\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s -model claude-4-opus              # Use Claude 4 Opus\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s -list-models                      # Show available models\n", os.Args[0])
 	}
