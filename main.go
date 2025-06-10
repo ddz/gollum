@@ -85,17 +85,26 @@ func main() {
 
 	// Custom usage function
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Anthropic Claude Agent with Local Bash and Built-in Text Editor\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
+		usageMsg := fmt.Sprintf(`Usage: %s [OPTIONS]
+
+Anthropic Claude Agent with Local Bash and Built-in Text Editor
+
+Options:
+`, os.Args[0])
+		fmt.Fprint(os.Stderr, usageMsg)
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
-		fmt.Fprintf(os.Stderr, "  ANTHROPIC_API_KEY    Anthropic API key (required)\n")
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  %s                                   # Use default Claude 4 Sonnet model\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -model claude-sonnet-4-0          # Use Claude 4 Sonnet\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -model claude-4-opus              # Use Claude 4 Opus\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -list-models                      # Show available models\n", os.Args[0])
+		
+		examplesMsg := fmt.Sprintf(`
+Environment Variables:
+  ANTHROPIC_API_KEY    Anthropic API key (required)
+
+Examples:
+  %s                                   # Use default Claude 4 Sonnet model
+  %s -model claude-sonnet-4-0          # Use Claude 4 Sonnet
+  %s -model claude-4-opus              # Use Claude 4 Opus
+  %s -list-models                      # Show available models
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+		fmt.Fprint(os.Stderr, examplesMsg)
 	}
 
 	flag.Parse()
@@ -148,17 +157,22 @@ func main() {
 	}
 	defer rl.Close()
 
-	fmt.Println("Anthropic Claude Agent with Local Bash and Built-in Text Editor")
-	fmt.Printf("Using model: %s\n", *modelName)
-	fmt.Println("Commands are executed locally on your machine")
-	fmt.Printf("Text editor tool: %s\n", client.TextEditorToolName)
-	fmt.Println("History is saved to .gollum_history")
-	fmt.Println("Use Ctrl+R for reverse history search, Ctrl+C to interrupt")
+	startupMsg := fmt.Sprintf(`Anthropic Claude Agent with Local Bash and Built-in Text Editor
+Using model: %s
+Commands are executed locally on your machine
+Text editor tool: %s
+History is saved to .gollum_history
+Use Ctrl+R for reverse history search, Ctrl+C to interrupt`, *modelName, client.TextEditorToolName)
+	
 	if systemPrompt != "" {
-		fmt.Printf("System prompt: %s\n", systemPrompt)
+		startupMsg += fmt.Sprintf("\nSystem prompt: %s", systemPrompt)
 	}
-	fmt.Println("Type '/exit' to quit, '/help' for special commands")
-	fmt.Println("---------------------------------------------------")
+	
+	startupMsg += `
+Type '/exit' to quit, '/help' for special commands
+---------------------------------------------------`
+	
+	fmt.Println(startupMsg)
 
 	for {
 		userInput, err := rl.Readline()
@@ -191,15 +205,18 @@ func main() {
 			readline.ClearScreen(rl)
 			continue
 		case "/help":
-			fmt.Println("\nSpecial commands:")
-			fmt.Println("  /exit, /quit - Exit the application")  
-			fmt.Println("  /clear       - Clear the screen")
-			fmt.Println("  /help        - Show this help")
-			fmt.Println("\nKeyboard shortcuts:")
-			fmt.Println("  Ctrl+R       - Reverse history search")
-			fmt.Println("  Ctrl+C       - Interrupt current input")
-			fmt.Println("  Ctrl+D       - Exit (EOF)")
-			fmt.Println("  Up/Down      - Navigate history")
+			helpMsg := `
+Special commands:
+  /exit, /quit - Exit the application
+  /clear       - Clear the screen
+  /help        - Show this help
+
+Keyboard shortcuts:
+  Ctrl+R       - Reverse history search
+  Ctrl+C       - Interrupt current input
+  Ctrl+D       - Exit (EOF)
+  Up/Down      - Navigate history`
+			fmt.Println(helpMsg)
 			continue
 		}
 

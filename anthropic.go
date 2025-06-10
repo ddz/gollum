@@ -150,23 +150,29 @@ func getModelFromString(modelStr string) anthropic.Model {
 
 // printAvailableModels prints the list of supported model names
 func printAvailableModels() {
-	fmt.Println("\nSupported model names:")
-	fmt.Println("Claude 4 models (text_editor_20250429):")
-	fmt.Println("  claude-sonnet-4-0, claude-4-sonnet (default)")
-	fmt.Println("  claude-sonnet-4-20250514, claude-4-sonnet-20250514")
-	fmt.Println("  claude-opus-4-0, claude-4-opus")
-	fmt.Println("  claude-opus-4-20250514, claude-4-opus-20250514")
-	fmt.Println("\nClaude 3.7 models (text_editor_20250124):")
-	fmt.Println("  claude-3-7-sonnet-latest, claude-3.7-sonnet-latest")
-	fmt.Println("  claude-3-7-sonnet-20250219, claude-3.7-sonnet-20250219")
-	fmt.Println("\nClaude 3.5 Sonnet models (text_editor_20250124):")
-	fmt.Println("  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest")
-	fmt.Println("  claude-3-5-sonnet-20241022, claude-3.5-sonnet-20241022")
-	fmt.Println("  claude-3-5-sonnet-20240620, claude-3.5-sonnet-20240620")
-	fmt.Println("\nYou can also specify any model name directly (for future models).")
-	fmt.Println("Text editor tool versions are automatically selected based on model compatibility.")
-	fmt.Println("\nNote: Only models Claude 3.5 Sonnet and later are supported due to")
-	fmt.Println("text editor and bash tool requirements.")
+	modelList := `
+Supported model names:
+Claude 4 models (text_editor_20250429):
+  claude-sonnet-4-0, claude-4-sonnet (default)
+  claude-sonnet-4-20250514, claude-4-sonnet-20250514
+  claude-opus-4-0, claude-4-opus
+  claude-opus-4-20250514, claude-4-opus-20250514
+
+Claude 3.7 models (text_editor_20250124):
+  claude-3-7-sonnet-latest, claude-3.7-sonnet-latest
+  claude-3-7-sonnet-20250219, claude-3.7-sonnet-20250219
+
+Claude 3.5 Sonnet models (text_editor_20250124):
+  claude-3-5-sonnet-latest, claude-3.5-sonnet-latest
+  claude-3-5-sonnet-20241022, claude-3.5-sonnet-20241022
+  claude-3-5-sonnet-20240620, claude-3.5-sonnet-20240620
+
+You can also specify any model name directly (for future models).
+Text editor tool versions are automatically selected based on model compatibility.
+
+Note: Only models Claude 3.5 Sonnet and later are supported due to
+text editor and bash tool requirements.`
+	fmt.Println(modelList)
 }
 
 // toolUseInfo holds information about a tool use block
@@ -403,7 +409,7 @@ func (ac *AnthropicClient) onTextEditorToolUse(toolUse toolUseInfo) anthropic.Be
 
 	switch input.Command {
 	case "view":
-		fmt.Printf("\n[%s] Viewing: %s", toolName, input.Path)
+		viewMsg := fmt.Sprintf("\n[%s] Viewing: %s", toolName, input.Path)
 
 		// Handle view_range from built-in tool
 		var start, end *int
@@ -430,9 +436,9 @@ func (ac *AnthropicClient) onTextEditorToolUse(toolUse toolUseInfo) anthropic.Be
 			if end != nil {
 				endVal = fmt.Sprintf("%d", *end)
 			}
-			fmt.Printf(" (lines %s-%s)", startVal, endVal)
+			viewMsg += fmt.Sprintf(" (lines %s-%s)", startVal, endVal)
 		}
-		fmt.Println()
+		fmt.Printf("%s\n", viewMsg)
 
 		rawOutput, execErr := ac.tools.TextEditor.View(input.Path, start, end)
 		if execErr == nil {
@@ -441,9 +447,8 @@ func (ac *AnthropicClient) onTextEditorToolUse(toolUse toolUseInfo) anthropic.Be
 		}
 
 	case "str_replace":
-		fmt.Printf("\n[%s] String replace in: %s\n", toolName, input.Path)
-		fmt.Printf("  Replacing: %q\n", input.OldStr)
-		fmt.Printf("  With: %q\n", input.NewStr)
+		fmt.Printf("\n[%s] String replace in: %s\n  Replacing: %q\n  With: %q\n", 
+			toolName, input.Path, input.OldStr, input.NewStr)
 
 		execErr = ac.tools.TextEditor.StringReplace(input.Path, input.OldStr, input.NewStr)
 		if execErr == nil {
