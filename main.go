@@ -63,6 +63,7 @@ var completer = readline.NewPrefixCompleter(
 	readline.PcItem("/quit"),
 	readline.PcItem("/help"),
 	readline.PcItem("/clear"),
+	readline.PcItem("/new"),
 )
 
 // filterInput filters input runes
@@ -196,19 +197,25 @@ Type '/exit' to quit, '/help' for special commands
 			continue
 		}
 		
-		// Handle special commands
-		switch strings.ToLower(userInput) {
-		case "/exit", "/quit":
-			fmt.Println("Goodbye!")
-			return
-		case "/clear":
-			readline.ClearScreen(rl)
-			continue
-		case "/help":
-			helpMsg := `
+		// Handle special commands (any line starting with '/')
+		if strings.HasPrefix(userInput, "/") {
+			switch strings.ToLower(userInput) {
+			case "/exit", "/quit":
+				fmt.Println("Goodbye!")
+				return
+			case "/clear":
+				readline.ClearScreen(rl)
+				continue
+			case "/new":
+				conversation = NewConversation()
+				fmt.Println("New conversation started!")
+				continue
+			case "/help":
+				helpMsg := `
 Special commands:
   /exit, /quit - Exit the application
   /clear       - Clear the screen
+  /new         - Start a new conversation
   /help        - Show this help
 
 Keyboard shortcuts:
@@ -216,8 +223,12 @@ Keyboard shortcuts:
   Ctrl+C       - Interrupt current input
   Ctrl+D       - Exit (EOF)
   Up/Down      - Navigate history`
-			fmt.Println(helpMsg)
-			continue
+				fmt.Println(helpMsg)
+				continue
+			default:
+				fmt.Printf("Unknown command: %s\nType '/help' to see available commands.\n", userInput)
+				continue
+			}
 		}
 
 		// Add user message
