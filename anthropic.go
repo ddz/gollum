@@ -228,7 +228,7 @@ func (ac *AnthropicClient) SendMessage(ctx context.Context, conversation *Conver
 
 	stream := ac.client.Beta.Messages.NewStreaming(ctx, params)
 
-	fmt.Print("\nAssistant: ")
+	fmt.Print("\nGollum: ")
 
 	message := anthropic.BetaMessage{}
 	toolUseBlocks := []toolUseInfo{}

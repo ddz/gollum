@@ -142,7 +142,7 @@ Examples:
 
 	// Create readline instance with history and editing support
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "You: ",
+		Prompt:          "~~> ",
 		HistoryFile:     ".gollum_history",
 		AutoComplete:    completer,
 		InterruptPrompt: "^C",
