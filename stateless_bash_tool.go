@@ -20,13 +20,20 @@ func NewStatelessBashTool() *StatelessBashTool {
 func (*StatelessBashTool) ExecuteCommand(command string) (stdout string, stderr string, err error) {
 	var stdoutBuffer, stderrBuffer bytes.Buffer
 
-	cmd := exec.Command("bash", "-c", command)
-	cmd.Stdout = &stdoutBuffer
-	cmd.Stderr = &stderrBuffer
+	//
+	// Check command syntax first. If the syntax is fine, then
+	// execute the command for real
+	//
+	stdout, stderr, err = checkBashCommand(command)
+	if err == nil {
+		cmd := exec.Command("bash", "-c", command)
+		cmd.Stdout = &stdoutBuffer
+		cmd.Stderr = &stderrBuffer
 
-	err = cmd.Run()
-	stdout = stdoutBuffer.String()
-	stderr = stderrBuffer.String()
+		err = cmd.Run()
+		stdout = stdoutBuffer.String()
+		stderr = stderrBuffer.String()
+	}
 
 	return
 }

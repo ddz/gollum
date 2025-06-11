@@ -78,7 +78,16 @@ func (s *StatefulBashTool) stopSession() {
 // ExecuteCommand runs the given command in the persistent bash session.
 // It returns the command's stdout, stderr, and any execution error.
 func (s *StatefulBashTool) ExecuteCommand(command string) (stdout string, stderr string, err error) {
-	return s.executeCommandInternal(command, 0)
+	//
+	// Check command syntax first. If the syntax is fine, then
+	// execute the command for real
+	//
+	stdout, stderr, err = checkBashCommand(command)
+	if err == nil {
+		return s.executeCommandInternal(command, 0)
+	}
+
+	return
 }
 
 // executeCommandInternal is the internal implementation with retry logic.

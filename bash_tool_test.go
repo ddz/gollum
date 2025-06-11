@@ -28,6 +28,12 @@ func testBashTool(t *testing.T, tool BashTool) {
 		t.Error("false command should have failed")
 	}
 
+	// Test command with syntax error
+	_, _, err = tool.ExecuteCommand("if [ 1 == ")
+	if err == nil {
+		t.Error("'if [ 1 == ' command should fail")
+	}
+	
 	// Test command with both stdout and stderr
 	stdout, stderr, err = tool.ExecuteCommand("echo 'stdout'; echo 'stderr' >&2")
 	if err != nil {
