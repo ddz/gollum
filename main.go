@@ -131,7 +131,7 @@ Examples:
 
 	// Instantiate tool providers
 	tools := &toolProviders{
-		Bash:       NewSimpleBashTool(),
+		Bash:       NewStatelessBashTool(),
 		TextEditor: NewSimpleTextEditorTool(),
 	}
 
