@@ -42,11 +42,11 @@ func (c *Conversation) AddToolResults(results []anthropic.BetaContentBlockParamU
 
 // AnthropicClient wraps the Anthropic SDK client and provides high-level methods
 type AnthropicClient struct {
-	client               *anthropic.Client
-	model                anthropic.Model
-	TextEditorToolName   string
-	systemPrompt         string
-	tools                *toolProviders
+	client             *anthropic.Client
+	model              anthropic.Model
+	TextEditorToolName string
+	systemPrompt       string
+	tools              *toolProviders
 }
 
 // NewAnthropicClient creates a new Anthropic client with the specified configuration
@@ -56,11 +56,11 @@ func NewAnthropicClient(apiKey, modelName, systemPrompt string, tools *toolProvi
 	textEditorToolName := getTextEditorToolName(model)
 
 	return &AnthropicClient{
-		client:               &client,
-		model:                model,
-		TextEditorToolName:   textEditorToolName,
-		systemPrompt:         systemPrompt,
-		tools:                tools,
+		client:             &client,
+		model:              model,
+		TextEditorToolName: textEditorToolName,
+		systemPrompt:       systemPrompt,
+		tools:              tools,
 	}
 }
 
@@ -352,16 +352,20 @@ func (ac *AnthropicClient) onBashToolUse(toolUse toolUseInfo) anthropic.BetaCont
 
 	// Execute the command locally
 	stdout, stderr, err := ac.tools.Bash.ExecuteCommand(input.Command)
-	output := fmt.Sprintf("<stdout>%s</stdout><stderr>%s</stderr>",
-		stdout, stderr)
-
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 	}
 
+	var content string
+	if err == nil {
+		content = stdout
+	} else {
+		content = stderr
+	}
+
 	toolResult = anthropic.NewBetaToolResultBlock(
 		toolUse.ID,
-		output,
+		content,
 		err != nil, // isError
 	)
 
@@ -447,7 +451,7 @@ func (ac *AnthropicClient) onTextEditorToolUse(toolUse toolUseInfo) anthropic.Be
 		}
 
 	case "str_replace":
-		fmt.Printf("\n[%s] String replace in: %s\n  Replacing: %q\n  With: %q\n", 
+		fmt.Printf("\n[%s] String replace in: %s\n  Replacing: %q\n  With: %q\n",
 			toolName, input.Path, input.OldStr, input.NewStr)
 
 		execErr = ac.tools.TextEditor.StringReplace(input.Path, input.OldStr, input.NewStr)
