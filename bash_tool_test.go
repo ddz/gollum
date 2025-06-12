@@ -10,110 +10,145 @@ import (
 func testBashTool(t *testing.T, tool BashTool) {
 	t.Helper()
 
-	// Test basic echo command
-	stdout, stderr, err := tool.ExecuteCommand("echo 'hello world'")
-	if err != nil {
-		t.Errorf("echo command failed: %v", err)
-	}
-	if stdout != "hello world\n" {
-		t.Errorf("expected 'hello world\\n', got %q", stdout)
-	}
-	if stderr != "" {
-		t.Errorf("expected empty stderr, got %q", stderr)
+	// Table-driven tests for command execution
+	tests := []struct {
+		name           string
+		command        string
+		expectedStdout string
+		expectedStderr string
+		shouldError    bool
+		skipOnWindows  bool
+	}{
+		{
+			name:           "BasicEcho",
+			command:        "echo 'hello world'",
+			expectedStdout: "hello world\n",
+			expectedStderr: "",
+			shouldError:    false,
+		},
+		{
+			name:        "CommandWithError",
+			command:     "false",
+			shouldError: true,
+		},
+		{
+			name:        "SyntaxError",
+			command:     "if [ 1 == ",
+			shouldError: true,
+		},
+		{
+			name:           "StdoutAndStderr",
+			command:        "echo 'stdout'; echo 'stderr' >&2",
+			expectedStdout: "stdout\n",
+			expectedStderr: "stderr\n",
+			shouldError:    false,
+		},
+		{
+			name:           "PipeCommand",
+			command:        "echo -e 'apple\\nbanana\\ncherry' | grep 'ban'",
+			expectedStdout: "banana\n",
+			expectedStderr: "",
+			shouldError:    false,
+		},
+		{
+			name:           "SingleQuotes",
+			command:        "echo 'single quotes'",
+			expectedStdout: "single quotes\n",
+			expectedStderr: "",
+			shouldError:    false,
+			skipOnWindows:  true,
+		},
+		{
+			name:           "DoubleQuotes",
+			command:        `echo "double quotes"`,
+			expectedStdout: "double quotes\n",
+			expectedStderr: "",
+			shouldError:    false,
+			skipOnWindows:  true,
+		},
+		{
+			name:           "NestedBackticks",
+			command:        "echo `echo nested`",
+			expectedStdout: "nested\n",
+			expectedStderr: "",
+			shouldError:    false,
+			skipOnWindows:  true,
+		},
+		{
+			name:           "MultipleCommands",
+			command:        "echo 'first'; echo 'second'",
+			expectedStdout: "first\nsecond\n",
+			expectedStderr: "",
+			shouldError:    false,
+			skipOnWindows:  true,
+		},
 	}
 
-	// Test command with error
-	_, _, err = tool.ExecuteCommand("false")
-	if err == nil {
-		t.Error("false command should have failed")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipOnWindows && runtime.GOOS == "windows" {
+				t.Skip("Skipping on Windows")
+			}
 
-	// Test command with syntax error
-	_, _, err = tool.ExecuteCommand("if [ 1 == ")
-	if err == nil {
-		t.Error("'if [ 1 == ' command should fail")
-	}
-	
-	// Test command with both stdout and stderr
-	stdout, stderr, err = tool.ExecuteCommand("echo 'stdout'; echo 'stderr' >&2")
-	if err != nil {
-		t.Errorf("stdout/stderr command failed: %v", err)
-	}
-	if stdout != "stdout\n" {
-		t.Errorf("expected 'stdout\\n', got %q", stdout)
-	}
-	if stderr != "stderr\n" {
-		t.Errorf("expected 'stderr\\n', got %q", stderr)
-	}
+			stdout, stderr, err := tool.ExecuteCommand(tt.command)
 
-	// Test pipes
-	stdout, stderr, err = tool.ExecuteCommand("echo -e 'apple\\nbanana\\ncherry' | grep 'ban'")
-	if err != nil {
-		t.Errorf("pipe command failed: %v", err)
-	}
-	if stdout != "banana\n" {
-		t.Errorf("expected 'banana\\n', got %q", stdout)
-	}
-	if stderr != "" {
-		t.Errorf("expected empty stderr, got %q", stderr)
-	}
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("command %q should have failed", tt.command)
+				}
+				return
+			}
 
-	// Test special characters (skip on Windows)
-	if runtime.GOOS != "windows" {
-		tests := []struct {
-			command  string
-			expected string
-		}{
-			{"echo 'single quotes'", "single quotes\n"},
-			{`echo "double quotes"`, "double quotes\n"},
-			{"echo `echo nested`", "nested\n"},
-			{"echo 'first'; echo 'second'", "first\nsecond\n"},
-		}
-
-		for _, test := range tests {
-			stdout, _, err := tool.ExecuteCommand(test.command)
 			if err != nil {
-				t.Errorf("command %q failed: %v", test.command, err)
-				continue
+				t.Errorf("command %q failed: %v", tt.command, err)
+				return
 			}
-			if stdout != test.expected {
-				t.Errorf("command %q: expected %q, got %q", test.command, test.expected, stdout)
+
+			if stdout != tt.expectedStdout {
+				t.Errorf("stdout mismatch for %q: expected %q, got %q", tt.command, tt.expectedStdout, stdout)
 			}
-		}
+
+			if stderr != tt.expectedStderr {
+				t.Errorf("stderr mismatch for %q: expected %q, got %q", tt.command, tt.expectedStderr, stderr)
+			}
+		})
 	}
 
 	// Test restart functionality
-	msg, err := tool.Restart()
-	if err != nil {
-		t.Errorf("restart failed: %v", err)
-	}
-	// Accept both possible restart messages
-	validMessages := []string{
-		"Bash session restarted",
-		"Stateful bash session restarted",
-	}
-	validMessage := false
-	for _, validMsg := range validMessages {
-		if msg == validMsg {
-			validMessage = true
-			break
+	t.Run("RestartFunctionality", func(t *testing.T) {
+		msg, err := tool.Restart()
+		if err != nil {
+			t.Errorf("restart failed: %v", err)
 		}
-	}
-	if !validMessage {
-		t.Errorf("unexpected restart message: %q", msg)
-	}
 
-	// Test command execution after restart
-	stdout, stderr, err = tool.ExecuteCommand("echo 'after restart'")
-	if err != nil {
-		t.Errorf("command after restart failed: %v", err)
-	}
-	if stdout != "after restart\n" {
-		t.Errorf("expected 'after restart\\n', got %q", stdout)
-	}
-	if stderr != "" {
-		t.Errorf("expected empty stderr after restart, got %q", stderr)
-	}
+		// Accept both possible restart messages
+		validMessages := []string{
+			"Bash session restarted",
+			"Stateful bash session restarted",
+		}
+		validMessage := false
+		for _, validMsg := range validMessages {
+			if msg == validMsg {
+				validMessage = true
+				break
+			}
+		}
+		if !validMessage {
+			t.Errorf("unexpected restart message: %q", msg)
+		}
+
+		// Test command execution after restart
+		stdout, stderr, err := tool.ExecuteCommand("echo 'after restart'")
+		if err != nil {
+			t.Errorf("command after restart failed: %v", err)
+		}
+		if stdout != "after restart\n" {
+			t.Errorf("expected 'after restart\\n', got %q", stdout)
+		}
+		if stderr != "" {
+			t.Errorf("expected empty stderr after restart, got %q", stderr)
+		}
+	})
 }
 
 func TestStatelessBashTool(t *testing.T) {
@@ -136,7 +171,7 @@ func TestStatefulBashTool(t *testing.T) {
 	}
 	defer tool.stopSession()
 
-	// Verify it implements the BashTool interface  
+	// Verify it implements the BashTool interface
 	var _ BashTool = tool
 
 	// Run common tests
@@ -144,32 +179,51 @@ func TestStatefulBashTool(t *testing.T) {
 
 	// Test stateful-specific behavior
 	t.Run("StatePersistence", func(t *testing.T) {
-		// Test environment variable persistence
-		_, _, err := tool.ExecuteCommand("export TEST_VAR=test_value")
-		if err != nil {
-			t.Errorf("export command failed: %v", err)
+		persistenceTests := []struct {
+			name           string
+			setupCommand   string
+			testCommand    string
+			expectedOutput string
+			outputContains string
+		}{
+			{
+				name:           "EnvironmentVariable",
+				setupCommand:   "export TEST_VAR=test_value",
+				testCommand:    "echo $TEST_VAR",
+				expectedOutput: "test_value\n",
+			},
+			{
+				name:           "DirectoryChange",
+				setupCommand:   "cd /tmp",
+				testCommand:    "pwd",
+				outputContains: "/tmp",
+			},
 		}
 
-		stdout, _, err := tool.ExecuteCommand("echo $TEST_VAR")
-		if err != nil {
-			t.Errorf("echo variable failed: %v", err)
-		}
-		if stdout != "test_value\n" {
-			t.Errorf("variable not preserved, expected 'test_value\\n', got %q", stdout)
-		}
+		for _, tt := range persistenceTests {
+			t.Run(tt.name, func(t *testing.T) {
+				// Setup
+				_, _, err := tool.ExecuteCommand(tt.setupCommand)
+				if err != nil {
+					t.Errorf("setup command %q failed: %v", tt.setupCommand, err)
+					return
+				}
 
-		// Test directory persistence
-		_, _, err = tool.ExecuteCommand("cd /tmp")
-		if err != nil {
-			t.Errorf("cd command failed: %v", err)
-		}
+				// Test
+				stdout, _, err := tool.ExecuteCommand(tt.testCommand)
+				if err != nil {
+					t.Errorf("test command %q failed: %v", tt.testCommand, err)
+					return
+				}
 
-		stdout, _, err = tool.ExecuteCommand("pwd")
-		if err != nil {
-			t.Errorf("pwd command failed: %v", err)
-		}
-		if !strings.Contains(stdout, "/tmp") {
-			t.Errorf("directory change not preserved, got %q", stdout)
+				if tt.expectedOutput != "" && stdout != tt.expectedOutput {
+					t.Errorf("expected exact output %q, got %q", tt.expectedOutput, stdout)
+				}
+
+				if tt.outputContains != "" && !strings.Contains(stdout, tt.outputContains) {
+					t.Errorf("expected output to contain %q, got %q", tt.outputContains, stdout)
+				}
+			})
 		}
 	})
 
@@ -197,29 +251,49 @@ func TestStatefulBashTool(t *testing.T) {
 	})
 
 	t.Run("ExitCommands", func(t *testing.T) {
-		// Test exit commands (this should handle the special exit case)
-		_, _, err := tool.ExecuteCommand("exit 1")
-		if err == nil {
-			t.Error("exit 1 command should have failed")
-		}
-		if !strings.Contains(err.Error(), "exit status 1") {
-			t.Errorf("expected exit status error, got: %v", err)
+		exitTests := []struct {
+			name          string
+			command       string
+			shouldError   bool
+			errorContains string
+		}{
+			{
+				name:          "ExitWithCode1",
+				command:       "exit 1",
+				shouldError:   true,
+				errorContains: "exit status 1",
+			},
+			{
+				name:          "ExitWithCode42",
+				command:       "exit 42",
+				shouldError:   true,
+				errorContains: "exit status 42",
+			},
+			{
+				name:    "PlainExit",
+				command: "exit",
+				// Note: plain "exit" might not always fail depending on implementation
+			},
 		}
 
-		// Test another exit command with different code
-		_, _, err = tool.ExecuteCommand("exit 42")
-		if err == nil {
-			t.Error("exit 42 command should have failed")
-		}
-		if !strings.Contains(err.Error(), "exit status 42") {
-			t.Errorf("expected exit status 42 error, got: %v", err)
-		}
+		for _, tt := range exitTests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, _, err := tool.ExecuteCommand(tt.command)
 
-		// Test plain exit command (defaults to exit 0, which should not be an error in this implementation)
-		_, _, err = tool.ExecuteCommand("exit")
-		// Note: plain "exit" might not always fail depending on implementation
-		// Just check that we can handle it without crashing
-		t.Logf("plain exit command result: %v", err)
+				if tt.shouldError {
+					if err == nil {
+						t.Errorf("%s command should have failed", tt.command)
+						return
+					}
+					if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+						t.Errorf("expected error containing %q, got: %v", tt.errorContains, err)
+					}
+				} else {
+					// For plain exit, just log the result
+					t.Logf("%s command result: %v", tt.command, err)
+				}
+			})
+		}
 	})
 
 	t.Run("SessionRecovery", func(t *testing.T) {
