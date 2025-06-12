@@ -81,6 +81,7 @@ func main() {
 	var (
 		modelName  = flag.String("model", "claude-4-sonnet", "Model to use (e.g., claude-sonnet-4-0, claude-3-5-sonnet-latest)")
 		listModels = flag.Bool("list-models", false, "List available model names and exit")
+		debug      = flag.Bool("debug", false, "Enable debug tracing of raw events")
 		help       = flag.Bool("help", false, "Show help message")
 	)
 
@@ -94,7 +95,7 @@ Options:
 `, os.Args[0])
 		fmt.Fprint(os.Stderr, usageMsg)
 		flag.PrintDefaults()
-		
+
 		examplesMsg := fmt.Sprintf(`
 Environment Variables:
   ANTHROPIC_API_KEY    Anthropic API key (required)
@@ -103,8 +104,9 @@ Examples:
   %s                                   # Use default Claude 4 Sonnet model
   %s -model claude-sonnet-4-0          # Use Claude 4 Sonnet
   %s -model claude-4-opus              # Use Claude 4 Opus
+  %s -debug                            # Enable debug tracing
   %s -list-models                      # Show available models
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 		fmt.Fprint(os.Stderr, examplesMsg)
 	}
 
@@ -136,7 +138,7 @@ Examples:
 	}
 
 	// Create Anthropic client
-	client := NewAnthropicClient(apiKey, *modelName, systemPrompt, tools)
+	client := NewAnthropicClient(apiKey, *modelName, systemPrompt, tools, *debug)
 
 	// Initialize conversation
 	conversation := NewConversation()
@@ -148,7 +150,7 @@ Examples:
 		AutoComplete:    completer,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
-		
+
 		HistorySearchFold:   true,
 		FuncFilterInputRune: filterInput,
 	})
@@ -164,15 +166,19 @@ Commands are executed locally on your machine
 Text editor tool: %s
 History is saved to .gollum_history
 Use Ctrl+R for reverse history search, Ctrl+C to interrupt`, *modelName, client.TextEditorToolName)
-	
+
+	if *debug {
+		startupMsg += "\nDEBUG MODE ENABLED - Raw event tracing is active"
+	}
+
 	if systemPrompt != "" {
 		startupMsg += fmt.Sprintf("\nSystem prompt: %s", systemPrompt)
 	}
-	
+
 	startupMsg += `
 Type '/exit' to quit, '/help' for special commands
 ---------------------------------------------------`
-	
+
 	fmt.Println(startupMsg)
 
 	for {
@@ -196,7 +202,7 @@ Type '/exit' to quit, '/help' for special commands
 		if userInput == "" {
 			continue
 		}
-		
+
 		// Handle special commands (any line starting with '/')
 		if strings.HasPrefix(userInput, "/") {
 			switch strings.ToLower(userInput) {
@@ -260,5 +266,3 @@ Keyboard shortcuts:
 		fmt.Println()
 	}
 }
-
-

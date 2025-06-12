@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -47,10 +48,11 @@ type AnthropicClient struct {
 	TextEditorToolName string
 	systemPrompt       string
 	tools              *toolProviders
+	debug              bool
 }
 
 // NewAnthropicClient creates a new Anthropic client with the specified configuration
-func NewAnthropicClient(apiKey, modelName, systemPrompt string, tools *toolProviders) *AnthropicClient {
+func NewAnthropicClient(apiKey, modelName, systemPrompt string, tools *toolProviders, debug bool) *AnthropicClient {
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 	model := getModelFromString(modelName)
 	textEditorToolName := getTextEditorToolName(model)
@@ -61,6 +63,7 @@ func NewAnthropicClient(apiKey, modelName, systemPrompt string, tools *toolProvi
 		TextEditorToolName: textEditorToolName,
 		systemPrompt:       systemPrompt,
 		tools:              tools,
+		debug:              debug,
 	}
 }
 
@@ -208,7 +211,7 @@ func (ac *AnthropicClient) SendMessage(ctx context.Context, conversation *Conver
 	// Build the message parameters
 	params := anthropic.BetaMessageNewParams{
 		Model:     ac.model,
-		MaxTokens: 1024,
+		MaxTokens: 8192, // Increased from 1024 to allow for longer responses
 		Messages:  conversation.messages,
 		Tools:     toolParams,
 		Betas: []anthropic.AnthropicBeta{
@@ -239,8 +242,26 @@ func (ac *AnthropicClient) SendMessage(ctx context.Context, conversation *Conver
 	// Process the stream
 	for stream.Next() {
 		event := stream.Current()
+
+		// Add detailed tracing of raw events (only when debug is enabled)
+		if ac.debug {
+			// Convert event to JSON for better readability
+			eventJSON, err := json.MarshalIndent(event.AsAny(), "", "  ")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Failed to marshal event to JSON: %v\n", err)
+				fmt.Fprintf(os.Stderr, "[DEBUG] Raw event type: %T\n", event.AsAny())
+				fmt.Fprintf(os.Stderr, "[DEBUG] Raw event data: %+v\n", event.AsAny())
+			} else {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Raw event type: %T\n", event.AsAny())
+				fmt.Fprintf(os.Stderr, "[DEBUG] Raw event JSON:\n%s\n", string(eventJSON))
+			}
+		}
+
 		err := message.Accumulate(event)
 		if err != nil {
+			if ac.debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Accumulate error for event type %T: %v\n", event.AsAny(), err)
+			}
 			return toolUseBlocks, fmt.Errorf("error accumulating message: %v", err)
 		}
 
