@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/chzyer/readline"
 )
 
 // systemPrompt defines the system prompt for the assistant.
@@ -55,25 +53,6 @@ func addLineNumbers(text string, startLine *int) string {
 type toolProviders struct {
 	Bash       BashTool
 	TextEditor TextEditorTool
-}
-
-// completer provides auto-completion for common commands
-var completer = readline.NewPrefixCompleter(
-	readline.PcItem("/exit"),
-	readline.PcItem("/quit"),
-	readline.PcItem("/help"),
-	readline.PcItem("/clear"),
-	readline.PcItem("/new"),
-)
-
-// filterInput filters input runes
-func filterInput(r rune) (rune, bool) {
-	switch r {
-	// block CtrlZ feature
-	case readline.CharCtrlZ:
-		return r, false
-	}
-	return r, true
 }
 
 func main() {
@@ -143,22 +122,49 @@ Examples:
 	// Initialize conversation
 	conversation := NewConversation()
 
-	// Create readline instance with history and editing support
-	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "~~> ",
-		HistoryFile:     ".gollum_history",
-		AutoComplete:    completer,
-		InterruptPrompt: "^C",
-		EOFPrompt:       "exit",
-
-		HistorySearchFold:   true,
-		FuncFilterInputRune: filterInput,
-	})
+	// Create user input handler
+	inputHandler, err := NewUserInputHandler()
 	if err != nil {
-		fmt.Printf("Error creating readline: %v\n", err)
+		fmt.Printf("Error creating input handler: %v\n", err)
 		os.Exit(1)
 	}
-	defer rl.Close()
+	defer inputHandler.Close()
+
+	// Register the 'new' command with access to conversation context
+	// This demonstrates how to register commands that need access to main application state
+	inputHandler.RegisterCommand("new", func() CommandResult {
+		conversation = NewConversation()
+		return CommandResult{
+			Action:  ActionHelp, // Use ActionHelp to show message and continue
+			Message: "New conversation started!",
+		}
+	})
+
+	// Example: Register a custom command
+	inputHandler.RegisterCommand("version", func() CommandResult {
+		return CommandResult{
+			Action:  ActionHelp, // Use ActionHelp to show message and continue
+			Message: "Gollum v1.0 - Anthropic Claude Agent",
+		}
+	})
+
+	// Example: Register another custom command
+	inputHandler.RegisterCommand("debug", func() CommandResult {
+		if *debug {
+			return CommandResult{
+				Action:  ActionHelp,
+				Message: "Debug mode is currently ENABLED",
+			}
+		} else {
+			return CommandResult{
+				Action:  ActionHelp,
+				Message: "Debug mode is currently DISABLED",
+			}
+		}
+	})
+
+	// Update auto-completion after registering custom commands
+	inputHandler.UpdateAutoComplete()
 
 	startupMsg := fmt.Sprintf(`Anthropic Claude Agent with Local Bash and Built-in Text Editor
 Using model: %s
@@ -182,62 +188,18 @@ Type '/exit' to quit, '/help' for special commands
 	fmt.Println(startupMsg)
 
 	for {
-		userInput, err := rl.Readline()
-		if err == readline.ErrInterrupt {
-			if len(userInput) == 0 {
-				fmt.Println("\nGoodbye!")
+		// Get user input (handles special commands internally)
+		userInput, err := inputHandler.UserInput()
+		if err != nil {
+			if err == io.EOF {
+				// Clean exit requested
 				break
-			} else {
-				continue
 			}
-		} else if err == io.EOF {
-			fmt.Println("\nGoodbye!")
-			break
-		} else if err != nil {
 			fmt.Printf("\nError reading input: %v\n", err)
 			break
 		}
 
-		userInput = strings.TrimSpace(userInput)
-		if userInput == "" {
-			continue
-		}
-
-		// Handle special commands (any line starting with '/')
-		if strings.HasPrefix(userInput, "/") {
-			switch strings.ToLower(userInput) {
-			case "/exit", "/quit":
-				fmt.Println("Goodbye!")
-				return
-			case "/clear":
-				readline.ClearScreen(rl)
-				continue
-			case "/new":
-				conversation = NewConversation()
-				fmt.Println("New conversation started!")
-				continue
-			case "/help":
-				helpMsg := `
-Special commands:
-  /exit, /quit - Exit the application
-  /clear       - Clear the screen
-  /new         - Start a new conversation
-  /help        - Show this help
-
-Keyboard shortcuts:
-  Ctrl+R       - Reverse history search
-  Ctrl+C       - Interrupt current input
-  Ctrl+D       - Exit (EOF)
-  Up/Down      - Navigate history`
-				fmt.Println(helpMsg)
-				continue
-			default:
-				fmt.Printf("Unknown command: %s\nType '/help' to see available commands.\n", userInput)
-				continue
-			}
-		}
-
-		// Add user message
+		// Add user message (userInput is guaranteed to be non-empty)
 		conversation.AddUserMessage(userInput)
 
 		// Loop to handle potential tool use
