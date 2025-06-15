@@ -26,7 +26,7 @@ func TestCommandHandlerWithWriter(t *testing.T) {
 	})
 
 	// Test the command handler directly
-	err = reader.ProcessSpecialCommand("/test")
+	err = reader.handleSpecialCommand("/test")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -38,7 +38,7 @@ func TestCommandHandlerWithWriter(t *testing.T) {
 	})
 
 	// Capture output using our buffer
-	testHandler := reader.handlers["testwriter"]
+	testHandler := reader.cmds["testwriter"].Handler
 	err = testHandler(&buf)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -59,7 +59,7 @@ func TestBuiltinCommandsWithWriter(t *testing.T) {
 
 	// Test help command with a buffer
 	var buf bytes.Buffer
-	helpHandler := reader.handlers["help"]
+	helpHandler := reader.cmds["help"].Handler
 	err = helpHandler(&buf)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -72,7 +72,7 @@ func TestBuiltinCommandsWithWriter(t *testing.T) {
 
 	// Test exit command with a buffer
 	buf.Reset()
-	exitHandler := reader.handlers["exit"]
+	exitHandler := reader.cmds["exit"].Handler
 	err = exitHandler(&buf)
 	if err != io.EOF {
 		t.Errorf("Expected io.EOF from exit command, got %v", err)
@@ -99,25 +99,22 @@ func TestCommandHandlerErrorPropagation(t *testing.T) {
 		return testError
 	})
 
-	// Test ProcessSpecialCommand directly
-	err = reader.ProcessSpecialCommand("/testerror")
+	// Test handleSpecialCommand directly
+	err = reader.handleSpecialCommand("/testerror")
 	if err == nil {
-		t.Error("Expected error from ProcessSpecialCommand, got nil")
+		t.Error("Expected error from handleSpecialCommand, got nil")
 	}
 	if err != testError {
 		t.Errorf("Expected specific test error, got: %v", err)
 	}
 
-	// Test ProcessInput error propagation
-	processedInput, err := reader.ProcessInput("/testerror")
+	// Test handleSpecialCommand error propagation again
+	err = reader.handleSpecialCommand("/testerror")
 	if err == nil {
-		t.Error("Expected error from ProcessInput, got nil")
+		t.Error("Expected error from handleSpecialCommand, got nil")
 	}
 	if err != testError {
 		t.Errorf("Expected specific test error, got: %v", err)
-	}
-	if processedInput != "" {
-		t.Errorf("Expected empty processedInput on error, got: %s", processedInput)
 	}
 }
 
@@ -129,23 +126,20 @@ func TestExitCommandReturnsEOF(t *testing.T) {
 	}
 	defer reader.Close()
 
-	// Test ProcessSpecialCommand with exit command
-	err = reader.ProcessSpecialCommand("/exit")
+	// Test handleSpecialCommand with exit command
+	err = reader.handleSpecialCommand("/exit")
 	if err != io.EOF {
 		t.Errorf("Expected io.EOF from exit command, got: %v", err)
 	}
 
-	// Test ProcessInput with exit command
-	processedInput, err := reader.ProcessInput("/exit")
+	// Test handleSpecialCommand with exit command again
+	err = reader.handleSpecialCommand("/exit")
 	if err != io.EOF {
-		t.Errorf("Expected io.EOF from ProcessInput with exit command, got: %v", err)
-	}
-	if processedInput != "" {
-		t.Errorf("Expected empty processedInput from exit command, got: %s", processedInput)
+		t.Errorf("Expected io.EOF from handleSpecialCommand with exit command, got: %v", err)
 	}
 }
 
-func TestAutoCompleteOnlyIncludesRegisteredCommands(t *testing.T) {
+func TestAutoCompleteIncludesRegisteredCommands(t *testing.T) {
 	// Create a new reader
 	reader, err := NewReader()
 	if err != nil {
@@ -154,11 +148,11 @@ func TestAutoCompleteOnlyIncludesRegisteredCommands(t *testing.T) {
 	defer reader.Close()
 
 	// Get the initial set of registered commands (built-in commands)
-	initialCommands := reader.GetRegisteredCommands()
-	
+	initialCommands := reader.commands()
+
 	// Verify that all commands in the auto-completer correspond to registered handlers
 	for _, cmd := range initialCommands {
-		if _, exists := reader.handlers[cmd]; !exists {
+		if _, exists := reader.cmds[cmd]; !exists {
 			t.Errorf("Command '%s' found in registered commands but no handler exists", cmd)
 		}
 	}
@@ -170,7 +164,7 @@ func TestAutoCompleteOnlyIncludesRegisteredCommands(t *testing.T) {
 	})
 
 	// Verify the new command is now in the registered commands
-	updatedCommands := reader.GetRegisteredCommands()
+	updatedCommands := reader.commands()
 	found := false
 	for _, cmd := range updatedCommands {
 		if cmd == "testcmd" {
@@ -184,24 +178,7 @@ func TestAutoCompleteOnlyIncludesRegisteredCommands(t *testing.T) {
 
 	// Verify all commands still have handlers
 	for _, cmd := range updatedCommands {
-		if _, exists := reader.handlers[cmd]; !exists {
-			t.Errorf("Command '%s' found in registered commands but no handler exists", cmd)
-		}
-	}
-
-	// Unregister the command and verify it's removed
-	reader.UnregisterCommand("testcmd")
-	finalCommands := reader.GetRegisteredCommands()
-	
-	for _, cmd := range finalCommands {
-		if cmd == "testcmd" {
-			t.Error("Command 'testcmd' still found in registered commands after unregistration")
-		}
-	}
-
-	// Verify all remaining commands still have handlers
-	for _, cmd := range finalCommands {
-		if _, exists := reader.handlers[cmd]; !exists {
+		if _, exists := reader.cmds[cmd]; !exists {
 			t.Errorf("Command '%s' found in registered commands but no handler exists", cmd)
 		}
 	}
@@ -216,8 +193,8 @@ func TestBuiltinCommandsArrayUsage(t *testing.T) {
 	defer reader.Close()
 
 	// Verify that all built-in commands from the global array are registered
-	registeredCommands := reader.GetRegisteredCommands()
-	
+	registeredCommands := reader.commands()
+
 	for _, builtinCmd := range builtinCommands {
 		found := false
 		for _, registeredCmd := range registeredCommands {
@@ -233,14 +210,14 @@ func TestBuiltinCommandsArrayUsage(t *testing.T) {
 
 	// Test that help command uses the global array for descriptions
 	var buf bytes.Buffer
-	helpHandler := reader.handlers["help"]
+	helpHandler := reader.cmds["help"].Handler
 	err = helpHandler(&buf)
 	if err != nil {
 		t.Errorf("Expected no error from help command, got %v", err)
 	}
 
 	output := buf.String()
-	
+
 	// Verify that help output contains descriptions from the global array
 	for _, builtinCmd := range builtinCommands {
 		if !strings.Contains(output, builtinCmd.Description) {
@@ -248,3 +225,4 @@ func TestBuiltinCommandsArrayUsage(t *testing.T) {
 		}
 	}
 }
+

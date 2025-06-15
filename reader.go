@@ -12,8 +12,8 @@ import (
 // CommandHandler is a function type for handling special commands
 type CommandHandler func(w io.Writer) error
 
-// BuiltinCommand represents a built-in command with its metadata and handler
-type BuiltinCommand struct {
+// command represents a command with its metadata and handler
+type command struct {
 	Name        string
 	Description string
 	Handler     CommandHandler
@@ -21,16 +21,15 @@ type BuiltinCommand struct {
 
 // Reader encapsulates readline functionality for user input handling
 type Reader struct {
-	rl           *readline.Instance
-	handlers     map[string]CommandHandler // Map of command name to handler function
-	descriptions map[string]string         // Map of command name to description
+	rl       *readline.Instance
+	cmds map[string]command // Map of command name to command struct
 }
 
 // completer starts empty and is populated dynamically based on registered command handlers
 var completer = readline.NewPrefixCompleter()
 
 // builtinCommands defines all built-in commands with their descriptions and handlers
-var builtinCommands = []BuiltinCommand{
+var builtinCommands = []command{
 	{
 		Name:        "exit",
 		Description: "Exit the application",
@@ -93,9 +92,8 @@ func NewReader() (*Reader, error) {
 	}
 
 	handler := &Reader{
-		rl:           rl,
-		handlers:     make(map[string]CommandHandler),
-		descriptions: make(map[string]string),
+		rl:       rl,
+		cmds: make(map[string]command),
 	}
 
 	// Register built-in commands
@@ -109,18 +107,8 @@ func (r *Reader) Close() error {
 	return r.rl.Close()
 }
 
-// ReadLine reads a line of input from the user
-// Returns the input string and an error if any
-func (r *Reader) ReadLine() (string, error) {
-	userInput, err := r.rl.Readline()
-	if err != nil {
-		return userInput, err
-	}
-	return strings.TrimSpace(userInput), nil
-}
-
-// ClearScreen clears the terminal screen
-func (r *Reader) ClearScreen() {
+// clearScreen clears the terminal screen
+func (r *Reader) clearScreen() {
 	readline.ClearScreen(r.rl)
 }
 
@@ -130,49 +118,34 @@ func (r *Reader) ClearScreen() {
 // The auto-completer is automatically updated after registration
 func (r *Reader) RegisterCommand(commandName string, description string, handler CommandHandler) {
 	lowercaseName := strings.ToLower(commandName)
-	r.handlers[lowercaseName] = handler
-	r.descriptions[lowercaseName] = description
-	r.UpdateAutoComplete()
+	r.cmds[lowercaseName] = command{
+		Name:        lowercaseName,
+		Description: description,
+		Handler:     handler,
+	}
+	
+	r.updateAutoComplete()
 }
 
-// UnregisterCommand removes a handler for a special command
-// The auto-completer is automatically updated after unregistration
-func (r *Reader) UnregisterCommand(commandName string) {
-	lowercaseName := strings.ToLower(commandName)
-	delete(r.handlers, lowercaseName)
-	delete(r.descriptions, lowercaseName)
-	r.UpdateAutoComplete()
-}
-
-// GetRegisteredCommands returns a list of all registered command names (without the '/' prefix)
-func (r *Reader) GetRegisteredCommands() []string {
-	commands := make([]string, 0, len(r.handlers))
-	for cmd := range r.handlers {
+// commands returns a list of all registered command names (without the '/' prefix)
+func (r *Reader) commands() []string {
+	commands := make([]string, 0, len(r.cmds))
+	for cmd := range r.cmds {
 		commands = append(commands, cmd)
 	}
 	return commands
 }
 
-// UpdateAutoComplete updates the auto-completion based on registered commands
-func (r *Reader) UpdateAutoComplete() {
-	items := make([]readline.PrefixCompleterInterface, 0, len(r.handlers))
-	for cmd := range r.handlers {
+// updateAutoComplete updates the auto-completion based on registered commands
+func (r *Reader) updateAutoComplete() {
+	items := make([]readline.PrefixCompleterInterface, 0, len(r.cmds))
+	for cmd := range r.cmds {
 		items = append(items, readline.PcItem("/"+cmd))
 	}
 
 	// Create new completer with current commands
 	newCompleter := readline.NewPrefixCompleter(items...)
 	r.rl.Config.AutoComplete = newCompleter
-}
-
-// IsInterruptError checks if the error is a readline interrupt error
-func IsInterruptError(err error) bool {
-	return err == readline.ErrInterrupt
-}
-
-// IsEOFError checks if the error is an EOF error
-func IsEOFError(err error) bool {
-	return err == io.EOF
 }
 
 // registerBuiltinCommands registers the default built-in special commands
@@ -183,7 +156,7 @@ func (r *Reader) registerBuiltinCommands() {
 		case "clear":
 			// Clear command needs access to the reader's ClearScreen method
 			r.RegisterCommand(cmd.Name, cmd.Description, func(w io.Writer) error {
-				r.ClearScreen()
+				r.clearScreen()
 				return nil
 			})
 		case "help":
@@ -204,17 +177,17 @@ func (r *Reader) registerBuiltinCommands() {
 // generateHelp generates the help text dynamically based on registered commands
 func (r *Reader) generateHelp(w io.Writer) error {
 	// Get all registered commands for dynamic help
-	commands := r.GetRegisteredCommands()
+	commands := r.commands()
 
 	fmt.Fprintln(w, "\nSpecial commands:")
 
 	// Display registered commands with their descriptions
-	for _, cmd := range commands {
-		if desc, exists := r.descriptions[cmd]; exists {
-			fmt.Fprintf(w, "  /%s - %s\n", cmd, desc)
+	for _, cmdName := range commands {
+		if cmd, exists := r.cmds[cmdName]; exists {
+			fmt.Fprintf(w, "  /%-12s\t- %s\n", cmdName, cmd.Description)
 		} else {
 			// Fallback for commands without descriptions (shouldn't happen)
-			fmt.Fprintf(w, "  /%s - No description available\n", cmd)
+			fmt.Fprintf(w, "  /%s - No description available\n", cmdName)
 		}
 	}
 
@@ -234,76 +207,43 @@ func (r *Reader) generateHelp(w io.Writer) error {
 func (r *Reader) UserInput() (userInput string, err error) {
 	for {
 		// Read input from user
-		input, err := r.ReadLine()
-		if IsInterruptError(err) {
-			if len(input) == 0 {
-				fmt.Println("\nGoodbye!")
-				return "", io.EOF // Use EOF to signal clean exit
-			} else {
-				continue // Ignore interrupted input, try again
-			}
-		} else if IsEOFError(err) {
-			fmt.Println("\nGoodbye!")
-			return "", err // Return EOF for clean exit
+		input, err := r.rl.Readline()
+		if err == readline.ErrInterrupt {
+			continue
 		} else if err != nil {
-			return "", err // Return the error for handling by caller
+			return "", err
 		}
 
-		// Process the input (handle special commands)
-		processedInput, err := r.ProcessInput(input)
-		if err != nil {
-			if err == io.EOF {
-				// Exit requested by command
+		// Trim whitespace from input
+		input = strings.TrimSpace(input)
+		
+		// Check if it's a special command
+		if isSpecialCommand(input) {
+			// Process the input (handle special commands)
+			err := r.handleSpecialCommand(input)
+			if err != nil {
 				return "", err
 			}
-			return "", err // Return error from command processing
+		} else {
+			// It's user input, return it
+			return input, nil
 		}
-
-		// If we have actual user input (not a special command), return it
-		if processedInput != "" {
-			return processedInput, nil
-		}
-
-		// processedInput was empty (special command processed), continue loop
 	}
 }
 
-// ProcessInput processes input and handles special commands
-// Returns the processed input (empty string if it was a special command)
-// Returns an error if command processing fails, including io.EOF for exit
-func (r *Reader) ProcessInput(input string) (processedInput string, err error) {
-	if input == "" {
-		return "", nil
-	}
-
-	// Check if it's a special command
-	if !strings.HasPrefix(input, "/") {
-		return input, nil // Not a special command, return as-is
-	}
-
-	// Process the special command
-	err = r.ProcessSpecialCommand(input)
-	if err != nil {
-		return "", err // Return error from command processing (including io.EOF for exit)
-	}
-
-	// Special command processed successfully, return empty string
-	return "", nil
+func isSpecialCommand(input string) bool {
+	return strings.HasPrefix(input, "/")
 }
 
-// ProcessSpecialCommand processes special commands that start with '/'
-// Returns an error if command processing fails, or io.EOF if exit is requested
-func (r *Reader) ProcessSpecialCommand(input string) error {
-	if !strings.HasPrefix(input, "/") {
-		return nil
-	}
-
+// handleSpecialCommand processes input and handles special commands
+// Returns an error if command processing fails including io.EOF for exit
+func (r *Reader) handleSpecialCommand(input string) error {
 	// Remove the '/' prefix and convert to lowercase
 	commandName := strings.ToLower(strings.TrimPrefix(input, "/"))
 
 	// Look up the handler for this command
-	if handler, exists := r.handlers[commandName]; exists {
-		return handler(os.Stdout)
+	if cmd, exists := r.cmds[commandName]; exists {
+		return cmd.Handler(os.Stdout)
 	}
 
 	// Unknown command
