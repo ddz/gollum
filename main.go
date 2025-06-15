@@ -123,7 +123,7 @@ Examples:
 	conversation := NewConversation()
 
 	// Create user input handler
-	inputHandler, err := NewUserInputHandler()
+	inputHandler, err := NewReader()
 	if err != nil {
 		fmt.Printf("Error creating input handler: %v\n", err)
 		os.Exit(1)
@@ -132,39 +132,27 @@ Examples:
 
 	// Register the 'new' command with access to conversation context
 	// This demonstrates how to register commands that need access to main application state
-	inputHandler.RegisterCommand("new", func() CommandResult {
+	inputHandler.RegisterCommand("new", "Start a new conversation", func(w io.Writer) error {
 		conversation = NewConversation()
-		return CommandResult{
-			Action:  ActionHelp, // Use ActionHelp to show message and continue
-			Message: "New conversation started!",
-		}
+		fmt.Fprintln(w, "New conversation started!")
+		return nil
 	})
 
 	// Example: Register a custom command
-	inputHandler.RegisterCommand("version", func() CommandResult {
-		return CommandResult{
-			Action:  ActionHelp, // Use ActionHelp to show message and continue
-			Message: "Gollum v1.0 - Anthropic Claude Agent",
-		}
+	inputHandler.RegisterCommand("version", "Show version information", func(w io.Writer) error {
+		fmt.Fprintln(w, "Gollum v1.0 - Anthropic Claude Agent")
+		return nil
 	})
 
 	// Example: Register another custom command
-	inputHandler.RegisterCommand("debug", func() CommandResult {
+	inputHandler.RegisterCommand("debug", "Show current debug mode status", func(w io.Writer) error {
 		if *debug {
-			return CommandResult{
-				Action:  ActionHelp,
-				Message: "Debug mode is currently ENABLED",
-			}
+			fmt.Fprintln(w, "Debug mode is currently ENABLED")
 		} else {
-			return CommandResult{
-				Action:  ActionHelp,
-				Message: "Debug mode is currently DISABLED",
-			}
+			fmt.Fprintln(w, "Debug mode is currently DISABLED")
 		}
+		return nil
 	})
-
-	// Update auto-completion after registering custom commands
-	inputHandler.UpdateAutoComplete()
 
 	startupMsg := fmt.Sprintf(`Anthropic Claude Agent with Local Bash and Built-in Text Editor
 Using model: %s
